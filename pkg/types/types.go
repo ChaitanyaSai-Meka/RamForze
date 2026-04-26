@@ -28,23 +28,16 @@ type TaskPayload struct {
 }
 
 type ResourceAsk struct {
-	RAMMIB              uint64 `json:"ram_mib"`
+	RAMMiB              uint64 `json:"ram_mib"`
 	CPUPct             uint32 `json:"cpu_pct"`
 	MaxDurationSeconds uint32     `json:"max_duration_seconds"`
-}
-
-type TokenMaster struct {
-	TokenID            string    `json:"token_id"`
-	TokenValue         string    `json:"token_value"`
-	MaxDurationSeconds uint32       `json:"max_duration_seconds"`
-	ExpiresAt          time.Time `json:"expires_at"`
 }
 
 type TokenWorker struct {
 	TokenID            string    `json:"token_id"`
 	TaskID             string    `json:"task_id"`
 	MasterID           string    `json:"master_id"`
-	ReservedRAMMIB      uint64   `json:"reserved_ram_mib"`
+	ReservedRAMMiB      uint64   `json:"reserved_ram_mib"`
 	ReservedCPUPct     uint32   `json:"reserved_cpu_pct"`
 	MaxDurationSeconds uint32       `json:"max_duration_seconds"`
 	ExpiresAt          time.Time `json:"expires_at"`
@@ -80,14 +73,17 @@ type NegotiationRequest struct {
 	MasterID     string      `json:"master_id"`
 	ResourceAsk  ResourceAsk `json:"resource_ask"`
 	RequiredTool string      `json:"required_tool"`
-	Priority     int         `json:"priority"`
+	Priority     uint8         `json:"priority"`
 	ParallelSafe bool        `json:"parallel_safe"`
 }
 
 type NegotiationResponse struct {
-	Status  string       `json:"status"` 
-	Reason  string       `json:"reason,omitempty"`
-	Token   *TokenMaster `json:"token,omitempty"`
+    Status             string    `json:"status"`                      
+    Reason             string    `json:"reason,omitempty"`             
+    TokenID            string    `json:"token_id,omitempty"`           
+    TokenValue         string    `json:"token_value,omitempty"`        
+    MaxDurationSeconds uint32    `json:"max_duration_seconds,omitempty"`
+    ExpiresAt          time.Time `json:"expires_at,omitempty"`         
 }
 
 type TaskResult struct {
@@ -96,7 +92,12 @@ type TaskResult struct {
 	OutputFiles []string `json:"output_files,omitempty"`
 	Stdout      string   `json:"stdout,omitempty"`
 	Stderr      string   `json:"stderr,omitempty"`
-	ExitCode    int      `json:"exit_code"`
+	ExitCode    *int      `json:"exit_code,omitempty"`
 	Reason      string   `json:"reason,omitempty"`
-	MaxDurationSeconds uint32 `json:"max_duration_seconds,omitempty"`
+}
+type TaskTimeout struct {
+    TaskID             string `json:"task_id"`
+    Status             string `json:"status"`              // timed_out
+    MaxDurationSeconds uint32 `json:"max_duration_seconds"`
+    Reason             string `json:"reason"`              // task_exceeded_max_duration
 }

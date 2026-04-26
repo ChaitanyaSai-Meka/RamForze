@@ -265,11 +265,13 @@ Ramforze is running.
 
 The Governor is a goroutine inside the Worker's Go backend. It is the **single authority** over all resource decisions on the Worker. No task is executed without the Governor's approval.
 
+All memory values in this document use binary units: `1 GiB = 1024 MiB`.
+
 **What the Governor checks before issuing a token:**
 
 1. **RAM headroom:** not just current free RAM, but safe-to-offer RAM. The Governor models current usage and reserves a buffer for the Worker's own OS and applications, then calculates what can safely be offered.
    ```
-   safe_to_offer_RAM = total_RAM - used_RAM - system_buffer (e.g., 1431 MiB)
+   safe_to_offer_RAM = total_RAM - used_RAM - system_buffer (e.g., 1536 MiB)
    ```
 
 2. **CPU headroom:** the Governor measures current CPU utilization and calculates the available percentage.
@@ -309,7 +311,7 @@ token_value = HMAC-SHA256(token_id + task_id + master_id + expires_at, hmac_secr
   "token_id": "a3f9...",
   "task_id": "task-001",
   "master_id": "master-uuid-A",
-  "reserved_ram_mib": 1907,
+  "reserved_ram_mib": 2048,
   "reserved_cpu_pct": 40,
   "max_duration_seconds": 120,
   "expires_at": "2024-01-01T12:05:00Z",
@@ -381,7 +383,7 @@ A task is the fundamental unit of work in Ramforze. Every task is serialized to 
   },
 
   "resource_ask": {
-    "ram_mib": 1907,
+    "ram_mib": 2048,
     "cpu_pct": 40,
     "max_duration_seconds": 120
   },
@@ -558,8 +560,8 @@ AND a Worker is connected with sufficient available headroom
 +-----------------------------------------------+
 | Ramforze                                      |
 |                                               |
-| "go build" is using 5531 MiB of RAM.         |
-| Your peer has 7629 MiB available.            |
+| "go build" is using 5800 MiB of RAM.         |
+| Your peer has 8192 MiB available.            |
 |                                               |
 | [Offload compilation]         [Dismiss]       |
 +-----------------------------------------------+
@@ -680,7 +682,7 @@ SwiftUI sends commands and receives state updates over the Unix socket. The Go b
 |  [||||||||  ] 80%  ~12s remaining              |
 +------------------------------------------------+
 |  LOCAL RESOURCES        WORKER RESOURCES       |
-|  RAM  ||||  5817 / 7629 MiB  RAM  ||   3815 / 15259 MiB |
+|  RAM  ||||  6100 / 8192 MiB  RAM  ||   4096 / 16384 MiB |
 |  CPU  |||   62%          CPU  |     18%        |
 +------------------------------------------------+
 |  [Manual Mode]    [Settings]                   |
@@ -712,9 +714,9 @@ SwiftUI sends commands and receives state updates over the Unix socket. The Go b
 |  (no other masters)                            |
 +------------------------------------------------+
 |  RESOURCES                                     |
-|  RAM  ||||||||||   9727 / 15259 MiB                |
+|  RAM  ||||||||||   10200 / 16384 MiB               |
 |  CPU  |||          28%                         |
-|  Offering to peers: 3815 MiB RAM, 35% CPU         |
+|  Offering to peers: 4096 MiB RAM, 35% CPU         |
 +------------------------------------------------+
 ```
 
@@ -782,7 +784,7 @@ ramforze/
   "task_id": "uuid",
   "master_id": "uuid",
   "resource_ask": {
-    "ram_mib": 1907,
+    "ram_mib": 2048,
     "cpu_pct": 40,
     "max_duration_seconds": 120
   },
@@ -827,7 +829,7 @@ ramforze/
     "output_files": ["main.o"]
   },
   "resource_ask": {
-    "ram_mib": 1907,
+    "ram_mib": 2048,
     "cpu_pct": 40,
     "max_duration_seconds": 120
   },
