@@ -560,7 +560,7 @@ AND a Worker is connected with sufficient available headroom
 +-----------------------------------------------+
 | Ramforze                                      |
 |                                               |
-| "go build" is using 5800 MiB of RAM.         |
+| "go build" is using 5632 MiB of RAM.         |
 | Your peer has 8192 MiB available.            |
 |                                               |
 | [Offload compilation]         [Dismiss]       |
@@ -682,7 +682,7 @@ SwiftUI sends commands and receives state updates over the Unix socket. The Go b
 |  [||||||||  ] 80%  ~12s remaining              |
 +------------------------------------------------+
 |  LOCAL RESOURCES        WORKER RESOURCES       |
-|  RAM  ||||  6100 / 8192 MiB  RAM  ||   4096 / 16384 MiB |
+|  RAM  ||||  6144 / 8192 MiB  RAM  ||   4096 / 16384 MiB |
 |  CPU  |||   62%          CPU  |     18%        |
 +------------------------------------------------+
 |  [Manual Mode]    [Settings]                   |
@@ -714,7 +714,7 @@ SwiftUI sends commands and receives state updates over the Unix socket. The Go b
 |  (no other masters)                            |
 +------------------------------------------------+
 |  RESOURCES                                     |
-|  RAM  ||||||||||   10200 / 16384 MiB               |
+|  RAM  ||||||||||   10240 / 16384 MiB               |
 |  CPU  |||          28%                         |
 |  Offering to peers: 4096 MiB RAM, 35% CPU         |
 +------------------------------------------------+
