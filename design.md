@@ -269,7 +269,7 @@ The Governor is a goroutine inside the Worker's Go backend. It is the **single a
 
 1. **RAM headroom:** not just current free RAM, but safe-to-offer RAM. The Governor models current usage and reserves a buffer for the Worker's own OS and applications, then calculates what can safely be offered.
    ```
-   safe_to_offer_RAM = total_RAM - used_RAM - system_buffer (e.g., 1.5 GB)
+   safe_to_offer_RAM = total_RAM - used_RAM - system_buffer (e.g., 1500 MB)
    ```
 
 2. **CPU headroom:** the Governor measures current CPU utilization and calculates the available percentage.
@@ -309,7 +309,7 @@ token_value = HMAC-SHA256(token_id + task_id + master_id + expires_at, hmac_secr
   "token_id": "a3f9...",
   "task_id": "task-001",
   "master_id": "master-uuid-A",
-  "reserved_ram_gb": 2.0,
+  "reserved_ram_mb": 2048,
   "reserved_cpu_pct": 40,
   "max_duration_seconds": 120,
   "expires_at": "2024-01-01T12:05:00Z",
@@ -381,7 +381,7 @@ A task is the fundamental unit of work in Ramforze. Every task is serialized to 
   },
 
   "resource_ask": {
-    "ram_gb": 2.0,
+    "ram_mb": 2048,
     "cpu_pct": 40,
     "max_duration_seconds": 120
   },
@@ -405,7 +405,7 @@ A task is the fundamental unit of work in Ramforze. Every task is serialized to 
 | `payload.args` | Arguments to pass to the tool. |
 | `payload.input_files` | Files the Master will transfer to the Worker before execution. |
 | `payload.output_files` | Files the Worker will transfer back to the Master after execution. |
-| `resource_ask.ram_gb` | RAM the Master estimates this task needs. |
+| `resource_ask.ram_mb` | RAM the Master estimates this task needs. |
 | `resource_ask.cpu_pct` | CPU percentage the Master estimates this task needs. |
 | `resource_ask.max_duration_seconds` | Master's time estimate. Baked into the token. Task is killed if it exceeds this window. |
 | `priority` | Integer 1 to 5. Higher means more urgent. Used by the Worker's priority queue. |
@@ -558,8 +558,8 @@ AND a Worker is connected with sufficient available headroom
 +-----------------------------------------------+
 | Ramforze                                      |
 |                                               |
-| "go build" is using 5.8 GB of RAM.           |
-| Your peer has 8 GB available.                 |
+| "go build" is using 5800 MB of RAM.           |
+| Your peer has 8000 MB available.                 |
 |                                               |
 | [Offload compilation]         [Dismiss]       |
 +-----------------------------------------------+
@@ -680,7 +680,7 @@ SwiftUI sends commands and receives state updates over the Unix socket. The Go b
 |  [||||||||  ] 80%  ~12s remaining              |
 +------------------------------------------------+
 |  LOCAL RESOURCES        WORKER RESOURCES       |
-|  RAM  ||||  6.1 / 8 GB  RAM  ||    4 / 16 GB  |
+|  RAM  ||||  6100 / 8000 MB  RAM  ||    4000 / 1600 MB  |
 |  CPU  |||   62%          CPU  |     18%        |
 +------------------------------------------------+
 |  [Manual Mode]    [Settings]                   |
@@ -712,9 +712,9 @@ SwiftUI sends commands and receives state updates over the Unix socket. The Go b
 |  (no other masters)                            |
 +------------------------------------------------+
 |  RESOURCES                                     |
-|  RAM  ||||||||||   10.2 / 16 GB                |
+|  RAM  ||||||||||   1020 / 1600 MB                |
 |  CPU  |||          28%                         |
-|  Offering to peers: 4 GB RAM, 35% CPU          |
+|  Offering to peers: 4000 MB RAM, 35% CPU          |
 +------------------------------------------------+
 ```
 
@@ -782,7 +782,7 @@ ramforze/
   "task_id": "uuid",
   "master_id": "uuid",
   "resource_ask": {
-    "ram_gb": 2.0,
+    "ram_mb": 2048,
     "cpu_pct": 40,
     "max_duration_seconds": 120
   },
@@ -827,7 +827,7 @@ ramforze/
     "output_files": ["main.o"]
   },
   "resource_ask": {
-    "ram_gb": 2.0,
+    "ram_mb": 2048,
     "cpu_pct": 40,
     "max_duration_seconds": 120
   },
