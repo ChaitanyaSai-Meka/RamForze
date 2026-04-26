@@ -14,7 +14,7 @@ type Task struct {
 	Payload     TaskPayload     `json:"payload"`
 	ResourceAsk ResourceAsk     `json:"resource_ask"`
 
-	Priority     int  `json:"priority"`     
+	Priority     uint8  `json:"priority"`     
 	ParallelSafe bool `json:"parallel_safe"`
 
 	CreatedAt time.Time `json:"created_at"`
@@ -28,15 +28,15 @@ type TaskPayload struct {
 }
 
 type ResourceAsk struct {
-	RAMMB              float64 `json:"ram_mb"`
-	CPUPct             float64 `json:"cpu_pct"`
-	MaxDurationSeconds int     `json:"max_duration_seconds"`
+	RAMMIB              uint64 `json:"ram_mib"`
+	CPUPct             uint32 `json:"cpu_pct"`
+	MaxDurationSeconds uint32     `json:"max_duration_seconds"`
 }
 
 type TokenMaster struct {
 	TokenID            string    `json:"token_id"`
 	TokenValue         string    `json:"token_value"`
-	MaxDurationSeconds int       `json:"max_duration_seconds"`
+	MaxDurationSeconds uint32       `json:"max_duration_seconds"`
 	ExpiresAt          time.Time `json:"expires_at"`
 }
 
@@ -44,9 +44,9 @@ type TokenWorker struct {
 	TokenID            string    `json:"token_id"`
 	TaskID             string    `json:"task_id"`
 	MasterID           string    `json:"master_id"`
-	ReservedRAMMB      float64   `json:"reserved_ram_mb"`
-	ReservedCPUPct     float64   `json:"reserved_cpu_pct"`
-	MaxDurationSeconds int       `json:"max_duration_seconds"`
+	ReservedRAMMIB      uint64   `json:"reserved_ram_mib"`
+	ReservedCPUPct     uint32   `json:"reserved_cpu_pct"`
+	MaxDurationSeconds uint32       `json:"max_duration_seconds"`
 	ExpiresAt          time.Time `json:"expires_at"`
 	Status             string    `json:"status"`
 }
@@ -98,5 +98,5 @@ type TaskResult struct {
 	Stderr      string   `json:"stderr,omitempty"`
 	ExitCode    int      `json:"exit_code"`
 	Reason      string   `json:"reason,omitempty"`
-	MaxDurationSeconds int `json:"max_duration_seconds,omitempty"`
+	MaxDurationSeconds uint32 `json:"max_duration_seconds,omitempty"`
 }
