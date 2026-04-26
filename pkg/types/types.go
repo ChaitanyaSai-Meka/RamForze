@@ -78,12 +78,13 @@ type NegotiationRequest struct {
 }
 
 type NegotiationResponse struct {
+	TaskID             string     `json:"task_id"`
     Status             string    `json:"status"`                      
     Reason             string    `json:"reason,omitempty"`             
     TokenID            string    `json:"token_id,omitempty"`           
     TokenValue         string    `json:"token_value,omitempty"`        
     MaxDurationSeconds uint32    `json:"max_duration_seconds,omitempty"`
-    ExpiresAt          time.Time `json:"expires_at,omitempty"`         
+    ExpiresAt          *time.Time `json:"expires_at,omitempty"`         
 }
 
 type TaskResult struct {
