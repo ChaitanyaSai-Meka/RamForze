@@ -420,7 +420,7 @@ A task is the fundamental unit of work in Ramforze. Every task is serialized to 
 
 ### 6.7 Master Task Journal
 
-The Task Journal is a persistent, append-only log maintained by the Master. It is the **source of truth** for all task state. It is written to disk **before** a task is dispatched to the Worker. This ensures that if the Master crashes mid-dispatch, the journal records what was sent and to whom, enabling full recovery on restart.
+The Task Journal is a persistent journal file maintained by the Master. It is the **source of truth** for all task state. A new task entry is written to disk **before** a task is dispatched to the Worker, and later status changes update that task's stored record. This ensures that if the Master crashes mid-dispatch, the journal records what was sent and to whom, enabling full recovery on restart.
 
 **Journal Entry Schema:**
 ```json
@@ -453,7 +453,7 @@ created -> dispatched -> completed
 6. If Worker has no record (crashed too, or task was lost): task re-queued locally.
 7. If reconnection fails: task re-queued locally.
 
-The journal is stored as a newline-delimited JSON file (one entry per line) at:
+The journal is stored as a newline-delimited JSON file containing the current record for each tracked task. Status updates replace the stored file atomically so the journal remains crash-safe during rewrites. It is stored at:
 ```
 ~/.ramforze/journal.ndjson
 ```
