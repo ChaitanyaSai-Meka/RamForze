@@ -302,7 +302,10 @@ The Governor generates a token pair when it approves a resource negotiation requ
 ```
 token_id    = UUID v4 (random, unique per task)
 hmac_secret = shared passphrase established during handshake
-token_value = HMAC-SHA256(token_id + task_id + master_id + expires_at, hmac_secret)
+token_value = HMAC-SHA256(
+  message = token_id | task_id | master_id | expires_at(RFC3339 UTC),
+  key     = hmac_secret
+)
 ```
 
 **K_worker** is stored internally by the Governor:
