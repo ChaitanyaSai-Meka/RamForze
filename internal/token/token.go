@@ -21,6 +21,10 @@ func GenerateID() (string, error) {
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
+// Sign computes HMAC-SHA256 over the token fields using the shared passphrase.
+// Fields are joined with "|" as delimiter. All signed fields (tokenID, taskID,
+// masterID) must be UUIDs and expiresAt must be RFC3339 - none of which
+// can contain "|". Do not change field types without updating this function.
 func Sign(tokenID, taskID, masterID string, expiresAt time.Time, passphrase string) string {
 	message := strings.Join([]string{
 		tokenID,
@@ -36,7 +40,17 @@ func Sign(tokenID, taskID, masterID string, expiresAt time.Time, passphrase stri
 
 func Verify(tokenValue, tokenID, taskID, masterID string, expiresAt time.Time, passphrase string) bool {
 	expected := Sign(tokenID, taskID, masterID, expiresAt, passphrase)
-	return hmac.Equal([]byte(expected), []byte(tokenValue))
+	expectedBytes, err := hex.DecodeString(expected)
+	if err != nil {
+		return false
+	}
+
+	tokenBytes, err := hex.DecodeString(tokenValue)
+	if err != nil {
+		return false
+	}
+
+	return hmac.Equal(expectedBytes, tokenBytes)
 }
 
 func IsExpired(expiresAt time.Time) bool {
