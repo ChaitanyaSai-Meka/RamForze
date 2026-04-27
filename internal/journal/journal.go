@@ -69,9 +69,12 @@ func (j *Journal) UpdateStatus(taskID string, status string, result *types.TaskR
 		if e.TaskID == taskID {
 			entries[i].Status = status
 			if status == "completed" || status == "failed" || status == "timed_out" {
-				now := time.Now()
+				now := time.Now().UTC()
 				entries[i].CompletedAt = &now
 				entries[i].Result = result
+			} else {
+				entries[i].CompletedAt = nil
+				entries[i].Result = nil
 			}
 			updated = true
 			break
@@ -112,9 +115,9 @@ func (j *Journal) GetByTaskID(taskID string) (*types.JournalEntry, error) {
 		return nil, err
 	}
 
-	for _, e := range entries {
-		if e.TaskID == taskID {
-			return &e, nil
+	for i := range entries {
+		if entries[i].TaskID == taskID {
+			return &entries[i], nil
 		}
 	}
 	return nil, fmt.Errorf("task %s not found in journal", taskID)
@@ -144,20 +147,53 @@ func (j *Journal) readAll() ([]types.JournalEntry, error) {
 }
 
 func (j *Journal) writeAll(entries []types.JournalEntry) error {
-	f, err := os.OpenFile(j.filePath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
+	dir := filepath.Dir(j.filePath)
+
+	tmp, err := os.CreateTemp(dir, journalFileName+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("could not open journal for rewrite: %w", err)
+		return fmt.Errorf("could not create temp journal: %w", err)
 	}
-	defer f.Close()
+	tmpPath := tmp.Name()
+	keepTemp := false
+	defer func() {
+		_ = tmp.Close()
+		if !keepTemp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	mode := os.FileMode(0644)
+	info, err := os.Stat(j.filePath)
+	if err == nil {
+		mode = info.Mode().Perm()
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("could not stat journal file: %w", err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return fmt.Errorf("could not set temp journal permissions: %w", err)
+	}
 
 	for _, entry := range entries {
 		line, err := json.Marshal(entry)
 		if err != nil {
 			return fmt.Errorf("could not serialize entry: %w", err)
 		}
-		if _, err := f.Write(append(line, '\n')); err != nil {
-			return fmt.Errorf("could not write entry: %w", err)
+		if _, err := tmp.Write(append(line, '\n')); err != nil {
+			return fmt.Errorf("could not write temp journal entry: %w", err)
 		}
 	}
+
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("could not sync temp journal: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("could not close temp journal: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, j.filePath); err != nil {
+		return fmt.Errorf("could not replace journal atomically: %w", err)
+	}
+
+	keepTemp = true
 	return nil
 }
