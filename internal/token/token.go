@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-const (
-	hmacHexLen = 64
-	hmacByteLen = 32
+var (
+	hmacByteLen = sha256.Size
+	hmacHexLen  = hex.EncodedLen(sha256.Size)
 )
 
 func GenerateID() (string, error) {
