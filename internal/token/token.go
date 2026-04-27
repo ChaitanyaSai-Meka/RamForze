@@ -21,36 +21,34 @@ func GenerateID() (string, error) {
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
-// Sign computes HMAC-SHA256 over the token fields using the shared passphrase.
-// Fields are joined with "|" as delimiter. All signed fields (tokenID, taskID,
-// masterID) must be UUIDs and expiresAt must be RFC3339 - none of which
-// can contain "|". Do not change field types without updating this function.
-func Sign(tokenID, taskID, masterID string, expiresAt time.Time, passphrase string) string {
+func computeHMAC(tokenID, taskID, masterID string, expiresAt time.Time, passphrase string) []byte {
 	message := strings.Join([]string{
 		tokenID,
 		taskID,
 		masterID,
 		expiresAt.UTC().Format(time.RFC3339),
 	}, "|")
-
 	mac := hmac.New(sha256.New, []byte(passphrase))
 	mac.Write([]byte(message))
-	return hex.EncodeToString(mac.Sum(nil))
+	return mac.Sum(nil)
+}
+
+// Sign returns the hex-encoded HMAC signature for use on the wire.
+// Fields are joined with "|" as delimiter. The string fields (tokenID,
+// taskID, masterID) must therefore not contain "|". expiresAt is formatted
+// in UTC using RFC3339 when computing the MAC. Do not change field types or
+// serialization without updating this function.
+func Sign(tokenID, taskID, masterID string, expiresAt time.Time, passphrase string) string {
+	return hex.EncodeToString(computeHMAC(tokenID, taskID, masterID, expiresAt, passphrase))
 }
 
 func Verify(tokenValue, tokenID, taskID, masterID string, expiresAt time.Time, passphrase string) bool {
-	expected := Sign(tokenID, taskID, masterID, expiresAt, passphrase)
-	expectedBytes, err := hex.DecodeString(expected)
-	if err != nil {
-		return false
-	}
-
 	tokenBytes, err := hex.DecodeString(tokenValue)
 	if err != nil {
 		return false
 	}
-
-	return hmac.Equal(expectedBytes, tokenBytes)
+	expected := computeHMAC(tokenID, taskID, masterID, expiresAt, passphrase)
+	return hmac.Equal(expected, tokenBytes)
 }
 
 func IsExpired(expiresAt time.Time) bool {
