@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// These are derived from the algorithm and encoding — do not set manually.
 var (
 	hmacByteLen = sha256.Size
 	hmacHexLen  = hex.EncodedLen(sha256.Size)

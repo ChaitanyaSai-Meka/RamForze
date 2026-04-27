@@ -128,9 +128,10 @@ MASTER                                              WORKER
 |  |                           |    |              |  | - Generate token pair      |   |
 |  |                           |    |              |  |   K_worker stored locally  |   |
 |  |                           |    |              |  |   K_master sent to Master  |   |
-|  |<--K_master (token_id,     |<---|----K_master--|--|   (token_id, token_value,  |   |
-|  |   token_value,            |    |              |  |    max_duration_seconds,   |   |
-|  |   max_duration_seconds,   |    |              |  |    expires_at)             |   |
+|  |<--K_master (task_id,      |<---|----K_master--|--|   (task_id, status,       |   |
+|  |   status, token_id,       |    |              |  |    token_id, token_value, |   |
+|  |   token_value,            |    |              |  |    max_duration_seconds,  |   |
+|  |   max_duration_seconds,   |    |              |  |    expires_at)            |   |
 |  |   expires_at)             |    |              |  +----------------------------+   |
 |  |                           |    |              |                                   |
 |  | 3. Write task to journal  |    |              |  +----------------------------+   |
@@ -163,7 +164,7 @@ MASTER                                              WORKER
 1. Worker advertises over BLE. Master scans, extracts the Worker's LAN IP and handshake port automatically. No manual IP entry.
 2. Master connects to Worker on the fixed handshake port `:7946`. Authenticates using a HMAC of its ID signed with the shared passphrase. Worker verifies and allocates a dedicated port (e.g. `:7947`) for all future communication with this Master.
 3. Master builds a task chunk and sends a negotiation request to the Governor on `:7947`, describing the RAM need, CPU need, required tool, and `max_duration_seconds`.
-4. Governor checks RAM headroom, CPU headroom, and tool availability. If all pass, it generates a token pair. `K_worker` is stored internally with the reserved resource allocation. `K_master` (containing `token_id`, `token_value`, `max_duration_seconds`, and `expires_at`) is sent back to the Master.
+4. Governor checks RAM headroom, CPU headroom, and tool availability. If all pass, it generates a token pair. `K_worker` is stored internally with the reserved resource allocation. `K_master` (containing `task_id`, `status`, `token_id`, `token_value`, `max_duration_seconds`, and `expires_at`) is sent back to the Master.
 5. Master writes the task to the journal with status `dispatched`, attaches `K_master` to the task envelope, and sends the task to the Worker on `:7947`.
 6. Worker validates `K_master` against `K_worker` via HMAC check and expiry check. On success, it allocates the reserved resources and executes the task. If the task is still running when `expires_at` is reached, the Governor kills it and notifies the Master.
 7. On completion, the token expires, resources are freed, and the result (output files + stdout/stderr) is sent back to the Master.
@@ -188,6 +189,32 @@ Handshake Port : 7946
 
 **Master side (Scanning):**
 The Master runs a BLE scanner, filters for the Ramforze service UUID, and extracts the Worker's LAN IP and handshake port directly from the advertisement. No manual IP entry is needed. Once the Master has the Worker's IP and port, BLE's job is done. All further communication is TCP.
+
+**macOS implementation note:**
+BLE on macOS is handled by a Swift subprocess via CoreBluetooth. The Swift process communicates discovered peer IP and port to the Go backend over a Unix socket at `~/.ramforze/ble.sock`. This avoids cgo bindings and CoreBluetooth memory management in Go.
+
+```text
+macOS BLE Architecture:
+
++---------------------------+        +---------------------------+
+|   Swift Process           |        |   Go Backend              |
+|   (BLEBridge)             |        |                           |
+|                           |        |                           |
+|   CoreBluetooth           |        |   internal/ble            |
+|   - CBCentralManager      |        |   - Reads peer discovery  |
+|     (Master: scanning)    | Unix   |     events from socket    |
+|   - CBPeripheralManager   | socket |   - Extracts IP + port    |
+|     (Worker: advertising) |------->|   - Triggers TCP handshake |
+|                           |        |                           |
+|   On peer found:          |        |   Socket path:            |
+|   sends JSON over socket: |        |   ~/.ramforze/ble.sock    |
+|   {                       |        |                           |
+|     "peer_ip": "192.x.x.x", |      |                           |
+|     "port": 7946,         |        |                           |
+|     "name": "Arjun's Mac" |        |                           |
+|   }                       |        |                           |
++---------------------------+        +---------------------------+
+```
 
 **Connection loss detection:**
 BLE advertisement stops when the Worker process exits or the machine sleeps. The Master detects this either via the BLE scan (device disappears from scan results) or via TCP keepalive on the data connection. Either signal triggers the fault tolerance flow.
@@ -306,6 +333,7 @@ token_value = HMAC-SHA256(
   message = token_id | task_id | master_id | expires_at(RFC3339 UTC),
   key     = hmac_secret
 )
+Note: string fields must not contain "|". Output is hex-encoded SHA-256 (64 chars / 32 bytes).
 ```
 
 **K_worker** is stored internally by the Governor:
@@ -327,6 +355,8 @@ token_value = HMAC-SHA256(
 **K_master** is sent to the Master:
 ```json
 {
+  "task_id": "task-001",
+  "status": "approved",
   "token_id": "a3f9...",
   "token_value": "<hmac-signature>",
   "max_duration_seconds": 120,
@@ -632,7 +662,7 @@ Ramforze:
 ### Required tool not available on Worker
 
 1. Governor's tool check fails during negotiation.
-2. Governor sends: `{ "status": "rejected", "reason": "tool_not_available", "tool": "clang" }`.
+2. Governor sends: `{ "task_id": "uuid", "status": "rejected", "reason": "tool_not_available", "tool": "clang" }`.
 3. Master re-queues locally and surfaces a warning in the UI.
 4. This task type is not attempted on this Worker again for the session.
 
@@ -752,7 +782,8 @@ ramforze/
 ├── swift/                # SwiftUI frontend (Xcode project)
 │   ├── Views/
 │   ├── Models/
-│   └── Bridge/           # Unix socket client in Swift
+│   ├── Bridge/           # Unix socket client in Swift
+│   └── BLEBridge/        # CoreBluetooth advertiser and scanner
 ├── scripts/
 │   └── install-wrappers.sh   # Installs ramforze-clang etc. into PATH
 └── design.md
@@ -800,6 +831,7 @@ ramforze/
 ### Negotiation RESPONSE: Approved (Governor to Master)
 ```json
 {
+  "task_id": "uuid",
   "status": "approved",
   "token_id": "uuid",
   "token_value": "<hmac-signature>",
@@ -811,6 +843,7 @@ ramforze/
 ### Negotiation RESPONSE: Rejected (Governor to Master)
 ```json
 {
+  "task_id": "uuid",
   "status": "rejected",
   "reason": "insufficient_resources_and_not_parallel_safe"
 }
@@ -874,6 +907,8 @@ ramforze/
   "reason": "task_exceeded_max_duration"
 }
 ```
+
+This is a separate wire message from `TaskResult`, not a result variant.
 
 ---
 
