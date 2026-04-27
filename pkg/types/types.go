@@ -98,7 +98,7 @@ type TaskResult struct {
 }
 type TaskTimeout struct {
 	TaskID             string `json:"task_id"`
-	Status             string `json:"status"` // timed_out
+	Status             string `json:"status"`
 	MaxDurationSeconds uint32 `json:"max_duration_seconds"`
-	Reason             string `json:"reason"` // task_exceeded_max_duration
+	Reason             string `json:"reason"` 
 }
