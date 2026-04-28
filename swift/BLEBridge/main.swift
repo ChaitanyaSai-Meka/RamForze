@@ -8,12 +8,12 @@ print("Starting Ramforze BLE Bridge...")
 let args = CommandLine.arguments
 
 var advertiser: WorkerBLEAdvertiser?
-var scanner: ScannerBLEScanner?
+var scanner: MasterBLEScanner?
 
 if args.contains("--worker") {
     advertiser = WorkerBLEAdvertiser()
 } else {
-    scanner = ScannerBLEScanner()
+    scanner = MasterBLEScanner()
 }
 
 signal(SIGTERM, SIG_IGN)
