@@ -181,17 +181,25 @@ Bluetooth Low Energy is used exclusively for peer discovery. No task data travel
 **Worker side (Advertising):**
 When the Worker starts Ramforze, it begins BLE advertising. The BLE advertisement payload contains:
 ```
-Service UUID   : ramforze-service (custom UUID, consistent across all instances)
-Device Name    : <hostname>
-LAN IP         : 192.168.x.x  (encoded in manufacturer data)
-Handshake Port : 7946
+CBAdvertisementDataServiceUUIDsKey : ramforze-service (custom UUID)
+CBAdvertisementDataLocalNameKey    : "<hostname>|<LAN-IP>|7946"
+                                     e.g. "MacBook|192.168.1.42|7946"
 ```
 
 **Master side (Scanning):**
-The Master runs a BLE scanner, filters for the Ramforze service UUID, and extracts the Worker's LAN IP and handshake port directly from the advertisement. No manual IP entry is needed. Once the Master has the Worker's IP and port, BLE's job is done. All further communication is TCP.
+The Master runs a BLE scanner, filters for the Ramforze service UUID, and extracts the Worker's LAN IP and handshake port by splitting the advertised local name string on `|`. No manual IP entry is needed. Once the Master has the Worker's IP and port, BLE's job is done. All further communication is TCP.
+
+```text
+parts    = localName.split("|")
+hostname = parts[0]  // "MacBook"
+ip       = parts[1]  // "192.168.1.42"
+port     = parts[2]  // "7946"
+```
 
 **macOS implementation note:**
 BLE on macOS is handled by a Swift subprocess via CoreBluetooth. The Swift process communicates discovered peer IP and port to the Go backend over a Unix socket at `~/.ramforze/ble.sock`. This avoids cgo bindings and CoreBluetooth memory management in Go.
+
+Note: macOS `CBPeripheralManager` only supports `CBAdvertisementDataLocalNameKey` and `CBAdvertisementDataServiceUUIDsKey` reliably in advertisement data. Manufacturer data is silently ignored. IP and port are therefore packed into `CBAdvertisementDataLocalNameKey` as a pipe-delimited string, and the Master splits on `|` to recover all three fields.
 
 ```text
 macOS BLE Architecture:
