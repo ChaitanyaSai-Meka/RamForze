@@ -182,8 +182,8 @@ Bluetooth Low Energy is used exclusively for peer discovery. No task data travel
 When the Worker starts Ramforze, it begins BLE advertising. The BLE advertisement payload contains:
 ```
 CBAdvertisementDataServiceUUIDsKey : ramforze-service (custom UUID)
-CBAdvertisementDataLocalNameKey    : "<hostname>|<LAN-IP>|7946"
-                                     e.g. "MacBook|192.168.1.42|7946"
+CBAdvertisementDataLocalNameKey    : "<hostname-prefix>|<LAN-IP>|7946"
+                                     e.g. "MacBoo|192.168.1.42|7946"
 ```
 
 **Master side (Scanning):**
@@ -199,7 +199,7 @@ port     = parts[2]  // "7946"
 **macOS implementation note:**
 BLE on macOS is handled by a Swift subprocess via CoreBluetooth. The Swift process communicates discovered peer IP and port to the Go backend over a Unix socket at `~/.ramforze/ble.sock`. This avoids cgo bindings and CoreBluetooth memory management in Go.
 
-Note: macOS `CBPeripheralManager` only supports `CBAdvertisementDataLocalNameKey` and `CBAdvertisementDataServiceUUIDsKey` reliably in advertisement data. Manufacturer data is silently ignored. IP and port are therefore packed into `CBAdvertisementDataLocalNameKey` as a pipe-delimited string, and the Master splits on `|` to recover all three fields.
+Note: macOS `CBPeripheralManager` only supports `CBAdvertisementDataLocalNameKey` and `CBAdvertisementDataServiceUUIDsKey` reliably in advertisement data. Manufacturer data is silently ignored. IP and port are therefore packed into `CBAdvertisementDataLocalNameKey` as a pipe-delimited string, and the Master splits on `|` to recover all three fields. The advertised hostname prefix is sanitized to remove `|` and truncated to fit BLE advertisement size limits.
 
 ```text
 macOS BLE Architecture:
@@ -215,12 +215,13 @@ macOS BLE Architecture:
 |     (Worker: advertising) |------->|   - Triggers TCP handshake |
 |                           |        |                           |
 |   On peer found:          |        |   Socket path:            |
-|   sends JSON over socket: |        |   ~/.ramforze/ble.sock    |
-|   {                       |        |                           |
-|     "peer_ip": "192.x.x.x", |      |                           |
-|     "port": 7946,         |        |                           |
-|     "name": "Arjun's Mac" |        |                           |
-|   }                       |        |                           |
+|   sends NDJSON events:    |        |   ~/.ramforze/ble.sock    |
+|   {"action":"add",        |        |                           |
+|    "peer_ip":"192.x.x.x", |        |                           |
+|    "port":7946,           |        |                           |
+|    "name":"Arjun"}        |        |                           |
+|   {"action":"remove",     |        |                           |
+|    "peer_ip":"192.x.x.x"} |        |                           |
 +---------------------------+        +---------------------------+
 ```
 
