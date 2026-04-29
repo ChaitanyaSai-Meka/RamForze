@@ -4,7 +4,7 @@ import Network
 
 private struct WorkerInfo {
     var ip: String
-    var port: String
+    var port: Int
     var name: String
     var lastSeen: Date
 }
@@ -66,32 +66,33 @@ final class MasterBLEScanner: NSObject, CBCentralManagerDelegate {
         
         guard let payload = advertisementData[CBAdvertisementDataLocalNameKey] as? String else { return }
         let parts = payload.split(separator: "|").map { String($0) }
-        
-        if parts.count == 3 {
-            let deviceID = peripheral.identifier.uuidString
-            let hostname = parts[0]
-            let ipAddress = parts[1]
-            let port = parts[2]
-            let lastSeen = Date()
-            
-            if activeWorkers[deviceID] == nil {
-                print("➕ NEW WORKER FOUND: \(hostname) (\(ipAddress):\(port))")
-                streamNDJSON(action: "add", ip: ipAddress, port: port, name: hostname)
-            } else if activeWorkers[deviceID]?.ip != ipAddress ||
-                        activeWorkers[deviceID]?.port != port ||
-                        activeWorkers[deviceID]?.name != hostname {
-                print("WORKER UPDATED: \(hostname) (\(ipAddress):\(port))")
-                // Re-send "add" as an upsert so the Go backend refreshes the peer entry.
-                streamNDJSON(action: "add", ip: ipAddress, port: port, name: hostname)
-            }
-            
-            activeWorkers[deviceID] = WorkerInfo(
-                ip: ipAddress,
-                port: port,
-                name: hostname,
-                lastSeen: lastSeen
-            )
+
+        guard parts.count == 3,
+              let port = Int(parts[2]),
+              (1...65535).contains(port) else { return }
+
+        let deviceID = peripheral.identifier.uuidString
+        let hostname = parts[0]
+        let ipAddress = parts[1]
+        let lastSeen = Date()
+
+        if activeWorkers[deviceID] == nil {
+            print("➕ NEW WORKER FOUND: \(hostname) (\(ipAddress):\(port))")
+            streamNDJSON(action: "add", ip: ipAddress, port: port, name: hostname)
+        } else if activeWorkers[deviceID]?.ip != ipAddress ||
+                    activeWorkers[deviceID]?.port != port ||
+                    activeWorkers[deviceID]?.name != hostname {
+            print("WORKER UPDATED: \(hostname) (\(ipAddress):\(port))")
+            // Re-send "add" as an upsert so the Go backend refreshes the peer entry.
+            streamNDJSON(action: "add", ip: ipAddress, port: port, name: hostname)
         }
+
+        activeWorkers[deviceID] = WorkerInfo(
+            ip: ipAddress,
+            port: port,
+            name: hostname,
+            lastSeen: lastSeen
+        )
     }
     
     private func sweepDeadWorkers() {
@@ -112,10 +113,10 @@ final class MasterBLEScanner: NSObject, CBCentralManagerDelegate {
         }
     }
     
-    private func streamNDJSON(action: String, ip: String, port: String = "", name: String = "") {
+    private func streamNDJSON(action: String, ip: String, port: Int = 7946, name: String = "") {
         var dict: [String: Any] = ["action": action, "peer_ip": ip]
         if action == "add" {
-            dict["port"] = Int(port) ?? 7946
+            dict["port"] = port
             dict["name"] = name
         }
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
