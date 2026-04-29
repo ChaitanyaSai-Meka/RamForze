@@ -39,7 +39,7 @@ final class MasterBLEScanner: NSObject, CBCentralManagerDelegate {
         socketConnection?.stateUpdateHandler = { state in
             switch state {
             case .ready:
-                print("Scanner securely connected to Go backend via socket.")
+                print("Scanner connected to Go backend via socket.")
             case .failed(let error):
                 print("Socket connection failed: \(error). (Is the Go backend running?)")
             default:

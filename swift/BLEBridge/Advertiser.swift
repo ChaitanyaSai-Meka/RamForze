@@ -1,11 +1,13 @@
 import Foundation
 import CoreBluetooth
+import Darwin
 
 final class WorkerBLEAdvertiser: NSObject, CBPeripheralManagerDelegate {
     private var peripheralManager: CBPeripheralManager!
 
     private let serviceUUID = CBUUID(string: "8530AD31-BC8A-4A39-82E2-787A106F0F25")
     private let handshakePort = 7946
+    private let maxLocalNameBytes = 28
 
     override init() {
         super.init()
@@ -37,9 +39,9 @@ final class WorkerBLEAdvertiser: NSObject, CBPeripheralManagerDelegate {
         guard peripheralManager.state == .poweredOn else { return }
 
         let lanIP = getLocalIPv4Address() ?? "0.0.0.0"
-        let hostname = Host.current().localizedName ?? "Worker"
-
-        let payloadString = "\(hostname)|\(lanIP)|\(handshakePort)"
+        let hostname = (Host.current().localizedName ?? "Worker")
+            .replacingOccurrences(of: "|", with: "-")
+        let payloadString = makePayloadString(hostname: hostname, lanIP: lanIP)
 
         let advertisementData: [String: Any] = [
             CBAdvertisementDataLocalNameKey: payloadString,
@@ -48,6 +50,17 @@ final class WorkerBLEAdvertiser: NSObject, CBPeripheralManagerDelegate {
 
         peripheralManager.startAdvertising(advertisementData)
         print("Worker advertising started. Name payload: \(payloadString)")
+    }
+
+    private func makePayloadString(hostname: String, lanIP: String) -> String {
+        let suffix = "|\(lanIP)|\(handshakePort)"
+        var truncatedHostname = hostname
+
+        while !truncatedHostname.isEmpty && (truncatedHostname + suffix).utf8.count > maxLocalNameBytes {
+            truncatedHostname.removeLast()
+        }
+
+        return truncatedHostname + suffix
     }
 
     private func getLocalIPv4Address() -> String? {
@@ -59,18 +72,19 @@ final class WorkerBLEAdvertiser: NSObject, CBPeripheralManagerDelegate {
             while ptr != nil {
                 defer { ptr = ptr?.pointee.ifa_next }
 
-                guard let interface = ptr?.pointee else { continue }
-                let addrFamily = interface.ifa_addr.pointee.sa_family
+                guard let interface = ptr?.pointee,
+                      let addr = interface.ifa_addr else { continue }
+                let addrFamily = addr.pointee.sa_family
 
                 if addrFamily == UInt8(AF_INET) {
                     let name = String(cString: interface.ifa_name)
 
                     if name.hasPrefix("en"), address == nil {
-                        var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                        getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len),
-                                    &hostname, socklen_t(hostname.count),
+                        var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                        getnameinfo(addr, socklen_t(addr.pointee.sa_len),
+                                    &hostBuffer, socklen_t(hostBuffer.count),
                                     nil, socklen_t(0), NI_NUMERICHOST)
-                        address = String(cString: hostname)
+                        address = String(cString: hostBuffer)
                     }
                 }
             }
