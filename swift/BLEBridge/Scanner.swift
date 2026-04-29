@@ -81,6 +81,7 @@ final class MasterBLEScanner: NSObject, CBCentralManagerDelegate {
                         activeWorkers[deviceID]?.port != port ||
                         activeWorkers[deviceID]?.name != hostname {
                 print("WORKER UPDATED: \(hostname) (\(ipAddress):\(port))")
+                // Re-send "add" as an upsert so the Go backend refreshes the peer entry.
                 streamNDJSON(action: "add", ip: ipAddress, port: port, name: hostname)
             }
             
@@ -111,19 +112,19 @@ final class MasterBLEScanner: NSObject, CBCentralManagerDelegate {
         }
     }
     
-        private func streamNDJSON(action: String, ip: String, port: String = "", name: String = "") {
-            var dict: [String: Any] = ["action": action, "peer_ip": ip]
-            if action == "add" {
-                dict["port"] = Int(port) ?? 7946
-                dict["name"] = name
-            }
-            guard let data = try? JSONSerialization.data(withJSONObject: dict),
-                var line = String(data: data, encoding: .utf8) else { return }
-            line += "\n"
-            socketConnection?.send(content: line.data(using: .utf8), completion: .contentProcessed({ error in
-                if let error { print("Socket send error: \(error)") }
-            }))
+    private func streamNDJSON(action: String, ip: String, port: String = "", name: String = "") {
+        var dict: [String: Any] = ["action": action, "peer_ip": ip]
+        if action == "add" {
+            dict["port"] = Int(port) ?? 7946
+            dict["name"] = name
         }
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              var line = String(data: data, encoding: .utf8) else { return }
+        line += "\n"
+        socketConnection?.send(content: line.data(using: .utf8), completion: .contentProcessed({ error in
+            if let error { print("Socket send error: \(error)") }
+        }))
+    }
     
     func stopScanning() {
         centralManager?.stopScan()

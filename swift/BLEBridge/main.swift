@@ -12,8 +12,11 @@ var scanner: MasterBLEScanner?
 
 if args.contains("--worker") {
     advertiser = WorkerBLEAdvertiser()
-} else {
+} else if args.contains("--master") {
     scanner = MasterBLEScanner()
+} else {
+    print("Usage: BLEBridge --worker | --master")
+    exit(1)
 }
 
 signal(SIGTERM, SIG_IGN)
