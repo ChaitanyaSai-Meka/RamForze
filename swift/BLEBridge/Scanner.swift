@@ -9,14 +9,18 @@ private struct WorkerInfo {
     var lastSeen: Date
 }
 
-final class MasterBLEScanner: NSObject, CBCentralManagerDelegate {
+final class MasterBLEScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     
     private var centralManager: CBCentralManager!
     
     private let serviceUUID = CBUUID(string: "8530AD31-BC8A-4A39-82E2-787A106F0F25")
+    // Must match payloadCharacteristicUUID in Advertiser.swift.
+    private let payloadCharacteristicUUID = CBUUID(string: "2C2A0E22-2F45-4A5C-8A0F-7C1D9A8E6B31")
     
     private var activeWorkers: [String: WorkerInfo] = [:]
     private var cleanupTimer: Timer?
+    private var pendingPeripherals: [String: CBPeripheral] = [:]
+    private var pendingReads: Set<String> = []
     
     private var socketConnection: NWConnection?
     
@@ -63,10 +67,77 @@ final class MasterBLEScanner: NSObject, CBCentralManagerDelegate {
     }
     
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
-        
-        guard let payload = advertisementData[CBAdvertisementDataLocalNameKey] as? String else { return }
-        let parts = payload.split(separator: "|").map { String($0) }
+        let deviceID = peripheral.identifier.uuidString
+        if var knownWorker = activeWorkers[deviceID] {
+            knownWorker.lastSeen = Date()
+            activeWorkers[deviceID] = knownWorker
+            return
+        }
 
+        guard !pendingReads.contains(deviceID) else { return }
+
+        pendingReads.insert(deviceID)
+        pendingPeripherals[deviceID] = peripheral
+        peripheral.delegate = self
+        centralManager.connect(peripheral, options: nil)
+    }
+
+    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        peripheral.discoverServices([serviceUUID])
+    }
+
+    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        let deviceID = peripheral.identifier.uuidString
+        pendingReads.remove(deviceID)
+        pendingPeripherals.removeValue(forKey: deviceID)
+        if let error {
+            print("Failed to connect to worker peripheral: \(error.localizedDescription)")
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        if let error {
+            print("Failed to discover services: \(error.localizedDescription)")
+            cleanupPendingPeripheral(peripheral)
+            return
+        }
+
+        guard let service = peripheral.services?.first(where: { $0.uuid == serviceUUID }) else {
+            cleanupPendingPeripheral(peripheral)
+            return
+        }
+
+        peripheral.discoverCharacteristics([payloadCharacteristicUUID], for: service)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        if let error {
+            print("Failed to discover characteristics: \(error.localizedDescription)")
+            cleanupPendingPeripheral(peripheral)
+            return
+        }
+
+        guard let characteristic = service.characteristics?.first(where: { $0.uuid == payloadCharacteristicUUID }) else {
+            cleanupPendingPeripheral(peripheral)
+            return
+        }
+
+        peripheral.readValue(for: characteristic)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        defer { cleanupPendingPeripheral(peripheral) }
+
+        if let error {
+            print("Failed to read worker payload: \(error.localizedDescription)")
+            return
+        }
+
+        guard characteristic.uuid == payloadCharacteristicUUID,
+              let data = characteristic.value,
+              let payload = String(data: data, encoding: .utf8) else { return }
+
+        let parts = payload.split(separator: "|").map { String($0) }
         guard parts.count == 3,
               let port = Int(parts[2]),
               (1...65535).contains(port) else { return }
@@ -126,10 +197,22 @@ final class MasterBLEScanner: NSObject, CBCentralManagerDelegate {
             if let error { print("Socket send error: \(error)") }
         }))
     }
+
+    private func cleanupPendingPeripheral(_ peripheral: CBPeripheral) {
+        let deviceID = peripheral.identifier.uuidString
+        pendingReads.remove(deviceID)
+        pendingPeripherals.removeValue(forKey: deviceID)
+        centralManager.cancelPeripheralConnection(peripheral)
+    }
     
     func stopScanning() {
         centralManager?.stopScan()
         cleanupTimer?.invalidate()
+        for peripheral in pendingPeripherals.values {
+            centralManager.cancelPeripheralConnection(peripheral)
+        }
+        pendingPeripherals.removeAll()
+        pendingReads.removeAll()
         socketConnection?.cancel()
         print("Scanner safely stopped.")
     }
