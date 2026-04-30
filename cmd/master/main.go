@@ -46,11 +46,21 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	defer signal.Stop(quit)
+
+	bridgeExited := make(chan error, 1)
+	go func() {
+		bridgeExited <- bleBridge.Wait()
+	}()
+
+	bridgeAlreadyExited := false
 	select {
 	case err := <-bleErr:
 		if err != nil {
 			fmt.Println("BLE listener error:", err)
 		}
+	case err := <-bridgeExited:
+		bridgeAlreadyExited = true
+		fmt.Println("BLEBridge exited unexpectedly:", err)
 	case <-quit:
 		fmt.Println("Shutting down Master...")
 	}
@@ -60,7 +70,9 @@ func main() {
 			fmt.Println("Failed to signal BLEBridge:", err)
 		}
 	}
-	if err := bleBridge.Wait(); err != nil {
-		fmt.Println("BLEBridge exited with error:", err)
+	if !bridgeAlreadyExited {
+		if err := bleBridge.Wait(); err != nil {
+			fmt.Println("BLEBridge exited with error:", err)
+		}
 	}
 }
