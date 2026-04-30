@@ -23,6 +23,11 @@ func StartBLEListener() error {
 		return fmt.Errorf("could not find home directory: %w", err)
 	}
 
+	dir := filepath.Join(home, ".ramforze")
+    if err := os.MkdirAll(dir, 0755); err != nil {
+        return fmt.Errorf("could not create .ramforze directory: %w", err)
+    }
+
 	socketPath := filepath.Join(home, ".ramforze", "ble.sock")
 
 	os.Remove(socketPath)
