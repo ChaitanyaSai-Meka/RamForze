@@ -125,7 +125,7 @@ func (j *Journal) GetByTaskID(taskID string) (*types.JournalEntry, error) {
 
 func (j *Journal) readAll() ([]types.JournalEntry, error) {
 	data, err := os.ReadFile(j.filePath)
-	if errors.Is(err, os.ErrNotExist){
+	if errors.Is(err, os.ErrNotExist) {
 		return []types.JournalEntry{}, nil
 	}
 	if err != nil {
