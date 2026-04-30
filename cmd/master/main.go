@@ -13,12 +13,16 @@ import (
 func main() {
     fmt.Println("Starting Ramforze Master...")
 
+    ready := make(chan struct{}, 1)
+
     go func() {
-        if err := ble.StartBLEListener(); err != nil {
+        if err := ble.StartBLEListener(ready); err != nil {
             fmt.Println("BLE listener error:", err)
             os.Exit(1)
         }
     }()
+
+    <-ready
 
     bleBridge := exec.Command("./blebridge", "--master")
     bleBridge.Stdout = os.Stdout
@@ -33,5 +37,6 @@ func main() {
     <-quit
 
     fmt.Println("Shutting down Master...")
-    bleBridge.Process.Kill()
+    bleBridge.Process.Signal(syscall.SIGTERM)
+    bleBridge.Wait()
 }

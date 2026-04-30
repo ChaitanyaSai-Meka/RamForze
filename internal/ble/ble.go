@@ -16,7 +16,7 @@ type BLEEvent struct {
     Name   string `json:"name"`
 }
 
-func StartBLEListener() error {
+func StartBLEListener(ready chan<- struct{}) error {
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -37,6 +37,10 @@ func StartBLEListener() error {
 		return fmt.Errorf("could not listen on BLE socket: %w", err)
 	}
 	defer ln.Close()
+
+	if ready != nil {
+        ready <- struct{}{}
+    }
 
 	fmt.Println("BLE socket listening on", socketPath)
 
