@@ -25,7 +25,7 @@ func StartBLEListener(ready chan<- struct{}) error {
 	}
 
 	dir := filepath.Join(home, ".ramforze")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("could not create .ramforze directory: %w", err)
 	}
 
@@ -40,6 +40,10 @@ func StartBLEListener(ready chan<- struct{}) error {
 		return fmt.Errorf("could not listen on BLE socket: %w", err)
 	}
 	defer ln.Close()
+	if err := os.Chmod(socketPath, 0600); err != nil {
+		ln.Close()
+		return fmt.Errorf("could not secure BLE socket permissions: %w", err)
+	}
 
 	if ready != nil {
 		select {
@@ -74,8 +78,14 @@ func handleConnection(conn net.Conn) {
 			continue
 		}
 
-		fmt.Printf("Received BLE event: action=%s, IP=%s, port=%d, name=%s\n",
-			event.Action, event.IP, event.Port, event.Name)
+		switch event.Action {
+		case "add":
+			fmt.Printf("Peer discovered: %s (%s:%d)\n", event.Name, event.IP, event.Port)
+		case "remove":
+			fmt.Printf("Peer lost: %s\n", event.IP)
+		default:
+			fmt.Printf("Unknown BLE event action: %s\n", event.Action)
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		fmt.Printf("BLE socket read error: %v\n", err)

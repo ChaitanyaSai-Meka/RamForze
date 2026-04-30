@@ -13,9 +13,8 @@ final class MasterBLEScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     
     private var centralManager: CBCentralManager!
     
-    private let serviceUUID = CBUUID(string: "8530AD31-BC8A-4A39-82E2-787A106F0F25")
-    // Must match payloadCharacteristicUUID in Advertiser.swift.
-    private let payloadCharacteristicUUID = CBUUID(string: "2C2A0E22-2F45-4A5C-8A0F-7C1D9A8E6B31")
+    private let serviceUUID = BLEConstants.serviceUUID
+    private let payloadCharacteristicUUID = BLEConstants.payloadCharacteristicUUID
     
     private var activeWorkers: [String: WorkerInfo] = [:]
     private var cleanupTimer: Timer?
@@ -93,6 +92,19 @@ final class MasterBLEScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         if let error {
             print("Failed to connect to worker peripheral: \(error.localizedDescription)")
         }
+    }
+
+    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        let deviceID = peripheral.identifier.uuidString
+        if pendingReads.contains(deviceID) {
+            if let error {
+                print("Peripheral disconnected during read: \(error.localizedDescription)")
+            } else {
+                print("Peripheral disconnected unexpectedly during read: \(deviceID)")
+            }
+        }
+        pendingReads.remove(deviceID)
+        pendingPeripherals.removeValue(forKey: deviceID)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
