@@ -100,5 +100,5 @@ type TaskTimeout struct {
 	TaskID             string `json:"task_id"`
 	Status             string `json:"status"`
 	MaxDurationSeconds uint32 `json:"max_duration_seconds"`
-	Reason             string `json:"reason"` 
+	Reason             string `json:"reason"`
 }

@@ -5,9 +5,12 @@ import Darwin
 final class WorkerBLEAdvertiser: NSObject, CBPeripheralManagerDelegate {
     private var peripheralManager: CBPeripheralManager!
 
-    private let serviceUUID = CBUUID(string: "8530AD31-BC8A-4A39-82E2-787A106F0F25")
+    private let serviceUUID = BLEConstants.serviceUUID
+    private let payloadCharacteristicUUID = BLEConstants.payloadCharacteristicUUID
     private let handshakePort = 7946
-    private let maxLocalNameBytes = 28
+    private var payloadData = Data()
+    private var payloadCharacteristic: CBMutableCharacteristic?
+    private var hasRegisteredService = false
 
     override init() {
         super.init()
@@ -18,6 +21,7 @@ final class WorkerBLEAdvertiser: NSObject, CBPeripheralManagerDelegate {
         if peripheral.state == .poweredOn {
             startBroadcasting()
         } else {
+            hasRegisteredService = false
             print("Worker BLE unavailable. State: \(peripheral.state.rawValue)")
         }
     }
@@ -30,8 +34,39 @@ final class WorkerBLEAdvertiser: NSObject, CBPeripheralManagerDelegate {
         }
     }
 
+    func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
+        if let error {
+            print("Failed to add BLE service: \(error.localizedDescription)")
+            return
+        }
+
+        hasRegisteredService = true
+        let advertisementData: [String: Any] = [
+            CBAdvertisementDataServiceUUIDsKey: [serviceUUID]
+        ]
+        peripheralManager.startAdvertising(advertisementData)
+        print("Worker service registered. Advertising service UUID only.")
+    }
+
+    func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
+        guard request.characteristic.uuid == payloadCharacteristicUUID else {
+            peripheral.respond(to: request, withResult: .attributeNotFound)
+            return
+        }
+
+        guard request.offset <= payloadData.count else {
+            peripheral.respond(to: request, withResult: .invalidOffset)
+            return
+        }
+
+        request.value = payloadData.subdata(in: request.offset..<payloadData.count)
+        peripheral.respond(to: request, withResult: .success)
+    }
+
     func stopAdvertising() {
         peripheralManager?.stopAdvertising()
+        peripheralManager?.removeAllServices()
+        hasRegisteredService = false
         print("Worker advertising stopped.")
     }
 
@@ -41,26 +76,29 @@ final class WorkerBLEAdvertiser: NSObject, CBPeripheralManagerDelegate {
         let lanIP = getLocalIPv4Address() ?? "0.0.0.0"
         let hostname = (Host.current().localizedName ?? "Worker")
             .replacingOccurrences(of: "|", with: "-")
-        let payloadString = makePayloadString(hostname: hostname, lanIP: lanIP)
+        let payloadString = "\(hostname)|\(lanIP)|\(handshakePort)"
+        payloadData = Data(payloadString.utf8)
 
-        let advertisementData: [String: Any] = [
-            CBAdvertisementDataLocalNameKey: payloadString,
-            CBAdvertisementDataServiceUUIDsKey: [serviceUUID]
-        ]
-
-        peripheralManager.startAdvertising(advertisementData)
-        print("Worker advertising started. Name payload: \(payloadString)")
-    }
-
-    private func makePayloadString(hostname: String, lanIP: String) -> String {
-        let suffix = "|\(lanIP)|\(handshakePort)"
-        var truncatedHostname = hostname
-
-        while !truncatedHostname.isEmpty && (truncatedHostname + suffix).utf8.count > maxLocalNameBytes {
-            truncatedHostname.removeLast()
+        guard !hasRegisteredService else {
+            print("Worker service already registered. Payload ready: \(payloadString)")
+            return
         }
 
-        return truncatedHostname + suffix
+        let characteristic = CBMutableCharacteristic(
+            type: payloadCharacteristicUUID,
+            properties: [.read],
+            // value: nil keeps the characteristic dynamic so the current payload
+            // is served on demand via didReceiveRead.
+            value: nil,
+            permissions: [.readable]
+        )
+        payloadCharacteristic = characteristic
+
+        let service = CBMutableService(type: serviceUUID, primary: true)
+        service.characteristics = [characteristic]
+
+        peripheralManager.add(service)
+        print("Registering worker payload characteristic: \(payloadString)")
     }
 
     private func getLocalIPv4Address() -> String? {
