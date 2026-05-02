@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/chaitanyasai-meka/Ramforze/internal/ble"
+	"github.com/chaitanyasai-meka/Ramforze/internal/handshake"
 )
 
 func main() {
@@ -17,9 +18,10 @@ func main() {
 
 	ready := make(chan struct{}, 1)
 	bleErr := make(chan error, 1)
+	peers := make(chan ble.BLEEvent, 10)
 
 	go func() {
-		bleErr <- ble.StartBLEListener(ready)
+		bleErr <- ble.StartBLEListener(ready, peers)
 	}()
 
 	select {
@@ -42,6 +44,20 @@ func main() {
 		fmt.Println("Failed to start BLEBridge:", err)
 		os.Exit(1)
 	}
+
+	go func() {
+		for event := range peers {
+			if event.Action == "add" {
+				fmt.Printf("Initiating handshake with %s (%s)\n", event.Name, event.IP)
+				port, err := handshake.RequestDedicatedPort(event.IP, "master-uuid-hardcoded-for-now", "master-ip-hardcoded-for-now")
+				if err != nil {
+					fmt.Println("Handshake failed:", err)
+					continue
+				}
+				fmt.Printf("Handshake success. Dedicated port: %d\n", port)
+			}
+		}
+	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
