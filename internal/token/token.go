@@ -75,6 +75,25 @@ func Verify(tokenValue, tokenID, taskID, masterID string, expiresAt time.Time, p
 	return hmac.Equal(expected, tokenBytes)
 }
 
+func SignHandshake(masterID, passphrase string) string {
+	mac := hmac.New(sha256.New, []byte(passphrase))
+	mac.Write([]byte(masterID))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func VerifyHandshake(masterID, passphrase, incoming string) bool {
+	if len(incoming) != hmacHexLen {
+		return false
+	}
+	incomingBytes, err := hex.DecodeString(incoming)
+	if err != nil || len(incomingBytes) != hmacByteLen {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(passphrase))
+	mac.Write([]byte(masterID))
+	return hmac.Equal(mac.Sum(nil), incomingBytes)
+}
+
 func IsExpired(expiresAt time.Time) bool {
 	return !time.Now().UTC().Before(expiresAt.UTC())
 }

@@ -17,7 +17,7 @@ type BLEEvent struct {
 	Name   string `json:"name"`
 }
 
-func StartBLEListener(ready chan<- struct{}) error {
+func StartBLEListener(ready chan<- struct{}, peers chan<- BLEEvent) error {
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -63,11 +63,11 @@ func StartBLEListener(ready chan<- struct{}) error {
 			}
 			return fmt.Errorf("BLE socket accept error: %w", err)
 		}
-		go handleConnection(conn)
+		go handleConnection(conn, peers)
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, peers chan<- BLEEvent) {
 	defer conn.Close()
 
 	scanner := bufio.NewScanner(conn)
@@ -82,12 +82,10 @@ func handleConnection(conn net.Conn) {
 		}
 
 		switch event.Action {
-		case "add":
-			fmt.Printf("Peer discovered: %s (%s:%d)\n", event.Name, event.IP, event.Port)
-		case "remove":
-			fmt.Printf("Peer lost: %s\n", event.IP)
-		default:
-			fmt.Printf("Unknown BLE event action: %s\n", event.Action)
+		case "add", "remove":
+			if peers != nil {
+				peers <- event
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
