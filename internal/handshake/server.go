@@ -61,6 +61,11 @@ func (s *Server) handleConnection(conn net.Conn) {
 		return
 	}
 
+	if hello.ProtocolVersion != "1.0" {
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: "REJECTED_UNSUPPORTED_VERSION"})
+		return
+	}
+
 	isValid := token.VerifyHandshake(hello.MasterID, s.Passphrase, hello.AuthHMAC)
 	if !isValid {
 		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: "REJECTED_UNAUTHORIZED"})

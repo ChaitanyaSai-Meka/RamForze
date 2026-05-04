@@ -7,15 +7,50 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/chaitanyasai-meka/Ramforze/internal/handshake"
+	"github.com/chaitanyasai-meka/Ramforze/internal/token"
 )
+
+func getOrCreateWorkerID() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("could not determine home directory: %w", err)
+	}
+	dir := filepath.Join(homeDir, ".ramforze")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", fmt.Errorf("could not create ramforze directory: %w", err)
+	}
+	path := filepath.Join(dir, "worker_id")
+	data, err := os.ReadFile(path)
+	if err == nil {
+		id := strings.TrimSpace(string(data))
+		if id != "" {
+			return id, nil
+		}
+	}
+	id, err := token.GenerateID()
+	if err != nil {
+		return "", fmt.Errorf("could not generate worker ID: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(id), 0600); err != nil {
+		return "", fmt.Errorf("could not persist worker ID: %w", err)
+	}
+	return id, nil
+}
 
 func main() {
 	fmt.Println("Starting Ramforze Worker...")
 
-	server, err := handshake.NewServer("worker-uuid-hardcoded-for-now")
+	workerID, err := getOrCreateWorkerID()
+	if err != nil {
+		fmt.Println("Failed to get worker ID:", err)
+		return
+	}
+
+	server, err := handshake.NewServer(workerID)
 	if err != nil {
 		fmt.Println("Failed to init handshake server:", err)
 		return

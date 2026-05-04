@@ -84,7 +84,11 @@ func handleConnection(conn net.Conn, peers chan<- BLEEvent) {
 		switch event.Action {
 		case "add", "remove":
 			if peers != nil {
-				peers <- event
+				select {
+				case peers <- event:
+				default:
+					fmt.Printf("Dropping BLE event because peers channel is full: %+v\n", event)
+				}
 			}
 		}
 	}

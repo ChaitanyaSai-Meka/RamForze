@@ -22,6 +22,13 @@ func ReadPassphrase() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("could not read config file: %w", err)
 	}
+	info, err := os.Stat(configPath)
+	if err != nil {
+		return "", fmt.Errorf("could not stat config file: %w", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("config file is group/world readable - run: chmod 600 %s", configPath)
+	}
 
 	var cfg Config
 	if err := json.Unmarshal(fileBytes, &cfg); err != nil {

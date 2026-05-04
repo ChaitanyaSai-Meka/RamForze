@@ -2,6 +2,7 @@ package handshake
 
 import (
 	"fmt"
+	"net"
 	"sync"
 )
 
@@ -26,10 +27,16 @@ func (p *PortPool) Allocate() (int, error) {
 	defer p.mu.Unlock()
 
 	for port := PortStart; port <= PortEnd; port++ {
-		if !p.inUse[port] {
-			p.inUse[port] = true
-			return port, nil
+		if p.inUse[port] {
+			continue
 		}
+		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err != nil {
+			continue
+		}
+		ln.Close()
+		p.inUse[port] = true
+		return port, nil
 	}
 	return 0, fmt.Errorf("no available ports in the pool")
 }

@@ -3,15 +3,42 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/chaitanyasai-meka/Ramforze/internal/ble"
 	"github.com/chaitanyasai-meka/Ramforze/internal/handshake"
+	"github.com/chaitanyasai-meka/Ramforze/internal/token"
 )
+
+func getLANIP() (string, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", fmt.Errorf("could not list network interfaces: %w", err)
+	}
+
+	for _, i := range ifaces {
+		if !strings.HasPrefix(i.Name, "en") {
+			continue
+		}
+		addrs, err := i.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
+				return ipnet.IP.String(), nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no active LAN interface found")
+}
 
 func main() {
 	fmt.Println("Starting Ramforze Master...")
@@ -45,16 +72,29 @@ func main() {
 		os.Exit(1)
 	}
 
+	masterID, err := token.GenerateID()
+	if err != nil {
+		fmt.Println("Failed to generate master ID:", err)
+		os.Exit(1)
+	}
+	masterIP, err := getLANIP()
+	if err != nil {
+		fmt.Println("Failed to detect LAN IP:", err)
+		os.Exit(1)
+	}
+
 	go func() {
 		for event := range peers {
 			if event.Action == "add" {
-				fmt.Printf("Initiating handshake with %s (%s)\n", event.Name, event.IP)
-				port, err := handshake.RequestDedicatedPort(event.IP, "master-uuid-hardcoded-for-now", "master-ip-hardcoded-for-now")
-				if err != nil {
-					fmt.Println("Handshake failed:", err)
-					continue
-				}
-				fmt.Printf("Handshake success. Dedicated port: %d\n", port)
+				go func(e ble.BLEEvent) {
+					fmt.Printf("Initiating handshake with %s (%s)\n", e.Name, e.IP)
+					port, err := handshake.RequestDedicatedPort(e.IP, masterID, masterIP)
+					if err != nil {
+						fmt.Println("Handshake failed:", err)
+						return
+					}
+					fmt.Printf("Handshake success. Dedicated port: %d\n", port)
+				}(event)
 			}
 		}
 	}()

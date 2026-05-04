@@ -33,6 +33,11 @@ func NewRegistry(pool *PortPool) *Registry {
 func (r *Registry) Register(masterID string, port int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if existing, ok := r.masters[masterID]; ok {
+		r.pool.Release(existing.DedicatedPort)
+	}
+
 	r.masters[masterID] = &MasterRecord{
 		DedicatedPort: port,
 		State:         StateConnected,
@@ -66,5 +71,6 @@ func (r *Registry) Get(masterID string) (*MasterRecord, error) {
 		return nil, fmt.Errorf("master %s not found in registry", masterID)
 	}
 
-	return record, nil
+	recordCopy := *record
+	return &recordCopy, nil
 }
