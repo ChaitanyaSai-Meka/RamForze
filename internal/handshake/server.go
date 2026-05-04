@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/chaitanyasai-meka/Ramforze/internal/token"
 	"github.com/chaitanyasai-meka/Ramforze/pkg/types"
@@ -65,6 +66,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: "REJECTED_UNSUPPORTED_VERSION"})
 		return
 	}
+	if strings.TrimSpace(hello.MasterID) == "" {
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: "REJECTED_INVALID_FIELDS"})
+		return
+	}
 
 	isValid := token.VerifyHandshake(hello.MasterID, s.Passphrase, hello.AuthHMAC)
 	if !isValid {
@@ -81,7 +86,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	response := types.HandshakeResponse{
 		WorkerID:      s.WorkerID,
 		DedicatedPort: port,
-		Status:        "ACCEPTED",
+		Status:        "connected",
 	}
 
 	if err := json.NewEncoder(conn).Encode(response); err != nil {

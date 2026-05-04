@@ -90,6 +90,8 @@ func handleConnection(conn net.Conn, peers chan<- BLEEvent) {
 					fmt.Printf("Dropping BLE event because peers channel is full: %+v\n", event)
 				}
 			}
+		default:
+			fmt.Printf("Ignoring unknown BLE action %q: %+v\n", event.Action, event)
 		}
 	}
 	if err := scanner.Err(); err != nil {

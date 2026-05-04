@@ -23,7 +23,7 @@ func getLANIP() (string, error) {
 	}
 
 	for _, i := range ifaces {
-		if !strings.HasPrefix(i.Name, "en") {
+		if i.Flags&net.FlagUp == 0 || i.Flags&net.FlagLoopback != 0 {
 			continue
 		}
 		addrs, err := i.Addrs()
@@ -31,13 +31,48 @@ func getLANIP() (string, error) {
 			continue
 		}
 		for _, addr := range addrs {
-			if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
-				return ipnet.IP.String(), nil
+			if ipnet, ok := addr.(*net.IPNet); ok {
+				ip := ipnet.IP.To4()
+				if ip == nil {
+					continue
+				}
+				if ip[0] == 10 ||
+					(ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31) ||
+					(ip[0] == 192 && ip[1] == 168) {
+					return ip.String(), nil
+				}
 			}
 		}
 	}
 
 	return "", fmt.Errorf("no active LAN interface found")
+}
+
+func getOrCreateMasterID() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("could not determine home directory: %w", err)
+	}
+	dir := filepath.Join(homeDir, ".ramforze")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", fmt.Errorf("could not create ramforze directory: %w", err)
+	}
+	path := filepath.Join(dir, "master_id")
+	data, err := os.ReadFile(path)
+	if err == nil {
+		id := strings.TrimSpace(string(data))
+		if id != "" {
+			return id, nil
+		}
+	}
+	id, err := token.GenerateID()
+	if err != nil {
+		return "", fmt.Errorf("could not generate master ID: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(id), 0600); err != nil {
+		return "", fmt.Errorf("could not persist master ID: %w", err)
+	}
+	return id, nil
 }
 
 func main() {
@@ -72,9 +107,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	masterID, err := token.GenerateID()
+	masterID, err := getOrCreateMasterID()
 	if err != nil {
-		fmt.Println("Failed to generate master ID:", err)
+		fmt.Println("Failed to get master ID:", err)
 		os.Exit(1)
 	}
 	masterIP, err := getLANIP()

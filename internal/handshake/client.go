@@ -40,7 +40,7 @@ func RequestDedicatedPort(workerIP string, masterID string, masterIP string) (in
 		return 0, fmt.Errorf("failed to read handshake response: %w", err)
 	}
 
-	if response.Status != "ACCEPTED" {
+	if response.Status != "connected" {
 		return 0, fmt.Errorf("handshake rejected by worker: %s", response.Status)
 	}
 
