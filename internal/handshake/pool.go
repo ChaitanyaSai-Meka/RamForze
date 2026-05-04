@@ -1,0 +1,48 @@
+package handshake
+
+import (
+	"fmt"
+	"net"
+	"sync"
+)
+
+const (
+	PortStart = 7947
+	PortEnd   = 8946
+)
+
+type PortPool struct {
+	mu    sync.Mutex
+	inUse map[int]bool
+}
+
+func NewPortPool() *PortPool {
+	return &PortPool{
+		inUse: make(map[int]bool),
+	}
+}
+
+func (p *PortPool) Allocate() (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for port := PortStart; port <= PortEnd; port++ {
+		if p.inUse[port] {
+			continue
+		}
+		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err != nil {
+			continue
+		}
+		ln.Close()
+		p.inUse[port] = true
+		return port, nil
+	}
+	return 0, fmt.Errorf("no available ports in the pool")
+}
+
+func (p *PortPool) Release(port int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.inUse, port)
+}

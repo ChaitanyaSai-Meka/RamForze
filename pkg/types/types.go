@@ -60,6 +60,7 @@ type HandshakeHello struct {
 	MasterIP        string `json:"master_ip"`
 	ProtocolVersion string `json:"protocol_version"`
 	AuthHMAC        string `json:"auth_hmac"`
+	Timestamp       string `json:"timestamp"`
 }
 
 type HandshakeResponse struct {

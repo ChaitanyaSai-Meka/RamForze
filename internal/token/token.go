@@ -75,6 +75,42 @@ func Verify(tokenValue, tokenID, taskID, masterID string, expiresAt time.Time, p
 	return hmac.Equal(expected, tokenBytes)
 }
 
+func SignHandshake(masterID, passphrase string) (string, string, error) {
+	if err := validateFields(masterID); err != nil {
+		return "", "", err
+	}
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	message := masterID + "|" + timestamp
+	mac := hmac.New(sha256.New, []byte(passphrase))
+	mac.Write([]byte(message))
+	return hex.EncodeToString(mac.Sum(nil)), timestamp, nil
+}
+
+func VerifyHandshake(masterID, passphrase, incoming, timestamp string) bool {
+	if err := validateFields(masterID); err != nil {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		return false
+	}
+	diff := time.Since(t)
+	if diff > 2*time.Minute || diff < -30*time.Second {
+		return false
+	}
+	if len(incoming) != hmacHexLen {
+		return false
+	}
+	incomingBytes, err := hex.DecodeString(incoming)
+	if err != nil || len(incomingBytes) != hmacByteLen {
+		return false
+	}
+	message := masterID + "|" + timestamp
+	mac := hmac.New(sha256.New, []byte(passphrase))
+	mac.Write([]byte(message))
+	return hmac.Equal(mac.Sum(nil), incomingBytes)
+}
+
 func IsExpired(expiresAt time.Time) bool {
 	return !time.Now().UTC().Before(expiresAt.UTC())
 }
