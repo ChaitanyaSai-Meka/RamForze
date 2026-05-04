@@ -277,11 +277,13 @@ Every communication channel begins on the Worker's fixed **handshake port `:7946
      "master_id": "<uuid>",
      "master_ip": "192.168.1.10",
      "protocol_version": "1.0",
-     "auth_hmac": "<hmac-of-master_id-using-passphrase>"
+     "auth_hmac": "<hmac-of-master_id|timestamp-using-passphrase>",
+     "timestamp": "2026-05-04T10:30:00Z"
    }
 
-3. Worker verifies auth_hmac against the shared passphrase.
-   If verification fails, connection is rejected immediately.
+3. Worker verifies auth_hmac against the shared passphrase and checks
+   that timestamp is recent. If verification fails or the timestamp is
+   stale, connection is rejected immediately.
 
 4. Worker's Governor allocates a dedicated port for this Master
    (from a pool, e.g., 7947 to 8946).
@@ -290,7 +292,7 @@ Every communication channel begins on the Worker's fixed **handshake port `:7946
    {
      "worker_id": "<uuid>",
      "dedicated_port": 7947,
-     "status": "connected"
+     "status": "CONNECTED"
    }
 
 6. Master closes the handshake connection.
@@ -828,7 +830,8 @@ ramforze/
   "master_id": "uuid",
   "master_ip": "192.168.1.10",
   "protocol_version": "1.0",
-  "auth_hmac": "<hmac-of-master_id-using-passphrase>"
+  "auth_hmac": "<hmac-of-master_id|timestamp-using-passphrase>",
+  "timestamp": "2026-05-04T10:30:00Z"
 }
 ```
 
@@ -837,7 +840,7 @@ ramforze/
 {
   "worker_id": "uuid",
   "dedicated_port": 7947,
-  "status": "connected"
+  "status": "CONNECTED"
 }
 ```
 
