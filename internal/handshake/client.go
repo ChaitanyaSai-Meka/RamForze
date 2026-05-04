@@ -22,7 +22,10 @@ func RequestDedicatedPort(workerIP string, masterID string, masterIP string) (in
 	}
 	defer conn.Close()
 
-	authHMAC, timestamp := token.SignHandshake(masterID, passphrase)
+	authHMAC, timestamp, err := token.SignHandshake(masterID, passphrase)
+	if err != nil {
+		return 0, fmt.Errorf("failed to sign handshake: %w", err)
+	}
 
 	hello := types.HandshakeHello{
 		MasterID:        masterID,
@@ -41,7 +44,7 @@ func RequestDedicatedPort(workerIP string, masterID string, masterIP string) (in
 		return 0, fmt.Errorf("failed to read handshake response: %w", err)
 	}
 
-	if response.Status != "connected" {
+	if response.Status != HandshakeStatusConnected {
 		return 0, fmt.Errorf("handshake rejected by worker: %s", response.Status)
 	}
 

@@ -43,10 +43,6 @@ func (s *Server) ListenAndServe() error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				fmt.Printf("Handshake accept temporary error: %v\n", err)
-				continue
-			}
 			return fmt.Errorf("handshake accept error: %w", err)
 		}
 		go s.handleConnection(conn)
@@ -63,30 +59,30 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 
 	if hello.ProtocolVersion != "1.0" {
-		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: "REJECTED_UNSUPPORTED_VERSION"})
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedUnsupported})
 		return
 	}
 	if strings.TrimSpace(hello.MasterID) == "" {
-		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: "REJECTED_INVALID_FIELDS"})
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedInvalidFields})
 		return
 	}
 
 	isValid := token.VerifyHandshake(hello.MasterID, s.passphrase, hello.AuthHMAC, hello.Timestamp)
 	if !isValid {
-		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: "REJECTED_UNAUTHORIZED"})
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedUnauthorized})
 		return
 	}
 
 	port, err := s.pool.Allocate()
 	if err != nil {
-		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: "REJECTED_NO_PORTS"})
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedNoPortsAvailable})
 		return
 	}
 
 	response := types.HandshakeResponse{
 		WorkerID:      s.workerID,
 		DedicatedPort: port,
-		Status:        "connected",
+		Status:        HandshakeStatusConnected,
 	}
 
 	if err := json.NewEncoder(conn).Encode(response); err != nil {

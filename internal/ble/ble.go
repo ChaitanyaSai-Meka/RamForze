@@ -57,10 +57,6 @@ func StartBLEListener(ready chan<- struct{}, peers chan<- BLEEvent) error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				fmt.Printf("BLE socket accept temporary error: %v\n", err)
-				continue
-			}
 			return fmt.Errorf("BLE socket accept error: %w", err)
 		}
 		go handleConnection(conn, peers)
