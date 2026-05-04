@@ -701,7 +701,7 @@ Ramforze:
 
 ### Shared Passphrase (Handshake Authentication)
 
-During the handshake on `:7946`, the Master sends a HMAC of its `master_id` computed using the shared passphrase as the key. The Worker verifies it. If verification fails, the connection is rejected immediately. This prevents any machine on the same LAN from connecting to a Worker without prior authorization.
+During the handshake on `:7946`, the Master sends a HMAC of `master_id|timestamp` computed using the shared passphrase as the key. The Worker verifies the HMAC and also checks that the timestamp is recent. Handshakes older than 2 minutes, or unreasonably far in the future, are rejected. This prevents any machine on the same LAN from connecting to a Worker without prior authorization and adds replay protection against captured old handshake packets.
 
 The passphrase is set by the user in the Ramforze UI on both machines before the first connection. Auto-generation with QR code sharing is a future polish milestone.
 

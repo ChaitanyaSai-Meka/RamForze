@@ -22,13 +22,14 @@ func RequestDedicatedPort(workerIP string, masterID string, masterIP string) (in
 	}
 	defer conn.Close()
 
-	authHMAC := token.SignHandshake(masterID, passphrase)
+	authHMAC, timestamp := token.SignHandshake(masterID, passphrase)
 
 	hello := types.HandshakeHello{
 		MasterID:        masterID,
 		MasterIP:        masterIP,
 		ProtocolVersion: "1.0",
 		AuthHMAC:        authHMAC,
+		Timestamp:       timestamp,
 	}
 
 	if err := json.NewEncoder(conn).Encode(hello); err != nil {

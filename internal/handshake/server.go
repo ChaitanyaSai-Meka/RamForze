@@ -11,10 +11,10 @@ import (
 )
 
 type Server struct {
-	Passphrase string
-	Pool       *PortPool
-	Registry   *Registry
-	WorkerID   string
+	passphrase string
+	pool       *PortPool
+	registry   *Registry
+	workerID   string
 }
 
 func NewServer(workerID string) (*Server, error) {
@@ -25,10 +25,10 @@ func NewServer(workerID string) (*Server, error) {
 
 	pool := NewPortPool()
 	return &Server{
-		Passphrase: pass,
-		Pool:       pool,
-		Registry:   NewRegistry(pool),
-		WorkerID:   workerID,
+		passphrase: pass,
+		pool:       pool,
+		registry:   NewRegistry(pool),
+		workerID:   workerID,
 	}, nil
 }
 
@@ -71,30 +71,30 @@ func (s *Server) handleConnection(conn net.Conn) {
 		return
 	}
 
-	isValid := token.VerifyHandshake(hello.MasterID, s.Passphrase, hello.AuthHMAC)
+	isValid := token.VerifyHandshake(hello.MasterID, s.passphrase, hello.AuthHMAC, hello.Timestamp)
 	if !isValid {
 		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: "REJECTED_UNAUTHORIZED"})
 		return
 	}
 
-	port, err := s.Pool.Allocate()
+	port, err := s.pool.Allocate()
 	if err != nil {
 		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: "REJECTED_NO_PORTS"})
 		return
 	}
 
 	response := types.HandshakeResponse{
-		WorkerID:      s.WorkerID,
+		WorkerID:      s.workerID,
 		DedicatedPort: port,
 		Status:        "connected",
 	}
 
 	if err := json.NewEncoder(conn).Encode(response); err != nil {
 		fmt.Printf("Failed to send response: %v\n", err)
-		s.Pool.Release(port)
+		s.pool.Release(port)
 		return
 	}
 
-	s.Registry.Register(hello.MasterID, port)
+	s.registry.Register(hello.MasterID, port)
 	fmt.Printf("Successfully registered Master %s to port %d\n", hello.MasterID, port)
 }
