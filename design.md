@@ -281,9 +281,10 @@ Every communication channel begins on the Worker's fixed **handshake port `:7946
      "timestamp": "2026-05-04T10:30:00Z"
    }
 
-3. Worker verifies auth_hmac against the shared passphrase and checks
-   that timestamp is recent. If verification fails or the timestamp is
-   stale, connection is rejected immediately.
+3. Worker verifies auth_hmac against the shared passphrase, checks that the
+   timestamp is recent, and checks the `(master_id, timestamp)` pair against
+   its nonce store to reject replays. If any check fails, connection is
+   rejected immediately.
 
 4. Worker's Governor allocates a dedicated port for this Master
    (from a pool, e.g., 7947 to 8946).
@@ -703,7 +704,8 @@ Ramforze:
 
 ### Shared Passphrase (Handshake Authentication)
 
-During the handshake on `:7946`, the Master sends a HMAC of `master_id|timestamp` computed using the shared passphrase as the key. The Worker verifies the HMAC and also checks that the timestamp is recent. Handshakes older than 2 minutes, or unreasonably far in the future, are rejected. This prevents any machine on the same LAN from connecting to a Worker without prior authorization and adds replay protection against captured old handshake packets.
+During the handshake on `:7946`, the Master sends a HMAC of `master_id|timestamp` computed using the shared passphrase as the key. The Worker verifies the HMAC and checks that the timestamp is recent. Handshakes older than 2 minutes, or unreasonably far in the future, are rejected. This prevents any machine on the same LAN from connecting to a Worker without prior authorization.
+The timestamp window alone is not sufficient replay protection: an attacker who captures a valid HELLO can resend it as is until the window expires. To close this, the Worker also maintains a **nonce store**, an in memory set of `(master_id, timestamp)` pairs already seen, keyed by the same fields already present in the HELLO payload (no wire format change needed). A HELLO whose `(master_id, timestamp)` pair already exists in the store is rejected outright, regardless of whether the timestamp is still within the acceptance window. Entries are evicted once they age past the acceptance window (2 minutes). The eviction TTL must always be at least as long as the window, never shorter, or entries can be forgotten before their replay risk actually expires.
 
 The passphrase is set by the user in the Ramforze UI on both machines before the first connection. Auto-generation with QR code sharing is a future polish milestone.
 
