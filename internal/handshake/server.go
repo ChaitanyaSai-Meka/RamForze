@@ -15,6 +15,8 @@ type Server struct {
 	pool       *PortPool
 	registry   *Registry
 	workerID   string
+	nonceStore *NonceMutex
+	ratelimiter  *RateLimitMux
 }
 
 func NewServer(workerID string) (*Server, error) {
@@ -29,6 +31,8 @@ func NewServer(workerID string) (*Server, error) {
 		pool:       pool,
 		registry:   NewRegistry(pool),
 		workerID:   workerID,
+		nonceStore: NewNonceMutex(),
+		ratelimiter: NewRateLimitMux(),
 	}, nil
 }
 
@@ -49,8 +53,14 @@ func (s *Server) ListenAndServe() error {
 	}
 }
 
+
 func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
+
+	if !RegisterAndCheckRateLimit(s.ratelimiter, conn.RemoteAddr().String()){
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedRateLimit})
+		return
+	}
 
 	var hello types.HandshakeHello
 	if err := json.NewDecoder(conn).Decode(&hello); err != nil {
@@ -66,6 +76,18 @@ func (s *Server) handleConnection(conn net.Conn) {
 		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedInvalidFields})
 		return
 	}
+
+	key := &Noncestruct{
+		master_id: hello.MasterID,
+		timestamp: hello.Timestamp,
+	}
+
+	if Checknonce(s.nonceStore,key) {
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedNonceUsed})
+		return
+	}
+	
+	RegisterNonce(s.nonceStore, key)
 
 	isValid := token.VerifyHandshake(hello.MasterID, s.passphrase, hello.AuthHMAC, hello.Timestamp)
 	if !isValid {
