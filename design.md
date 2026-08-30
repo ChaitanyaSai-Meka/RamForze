@@ -44,7 +44,7 @@ Ramforze solves this.
 
 ## 2. What We Are Building
 
-Ramforze is a **local distributed task dispatcher** for macOS. It allows one machine (the Master) to offload compute-heavy tasks to a nearby machine (the Worker) over a local peer-to-peer connection. The Worker negotiates and approves resource allocation via a Governor goroutine, issues a one-time capability token to authorize the task, and executes it in an isolated resource envelope. The Master tracks all task state in a persistent journal. The result travels back to the Master when the task completes.
+Ramforze is a **local distributed task dispatcher** for macOS. It allows one machine (the Master) to offload compute-heavy tasks to a nearby machine (the Worker) over a local peer-to-peer connection. The Worker negotiates and approves resource allocation via a WorkerGovernor goroutine, issues a one-time capability token to authorize the task, and executes it in an isolated resource envelope. The Master tracks all task state in a persistent journal. The result travels back to the Master when the task completes.
 
 The user experience goal: it should feel like your machine got faster, not like you are operating a distributed system.
 
@@ -71,26 +71,34 @@ The user experience goal: it should feel like your machine got faster, not like 
 ### Master
 The machine that owns the task and needs help. It:
 - Discovers available Workers via BLE.
-- Negotiates resource allocation with the Worker's Governor.
+- Negotiates resource allocation with the Worker's WorkerGovernor.
 - Holds and maintains the Task Journal.
 - Splits work into task chunks and dispatches them.
 - Receives results and re-queues on failure.
 
 ### Worker
 The machine providing compute. It:
-- Runs a Governor goroutine that controls all resource decisions.
+- Runs a WorkerGovernor goroutine that controls all resource decisions.
 - Allocates a dedicated port per connected Master.
 - Executes approved task chunks in isolated resource envelopes.
 - Returns results to the Master.
 - Can serve multiple Masters simultaneously, subject to resource availability.
 
 ### Governor
-A goroutine inside the Worker process. It is the single authority over the Worker's resources. Nothing runs on the Worker without a valid capability token issued by the Governor. It:
+The Governor is split into two separate types: **MasterGovernor**, running inside the Master's Go backend, and **WorkerGovernor**, running inside the Worker's Go backend. See 6.4 for full detail. In brief:
+
+**WorkerGovernor** is the single authority over the Worker's own resources. Nothing runs on the Worker without a valid capability token issued by it. It:
 - Receives resource negotiation requests from Masters.
 - Checks available CPU, RAM, required tool availability, and accepts the Master's time estimate.
 - Issues matched capability token pairs: one sent to the Master, one stored internally.
 - Reserves the approved resources against that token for the token's full duration.
 - Expires tokens on task completion, timeout, or connection loss.
+- Pushes a periodic heartbeat to the Master carrying liveness and its cached tool-availability snapshot.
+
+**MasterGovernor** tracks the state needed to manage dispatch across Workers. It makes no resource decisions itself. It:
+- Tracks each connected Worker's online/offline status, derived from that Worker's heartbeat.
+- Tracks each connected Worker's cached tool-availability snapshot, as reported in the heartbeat.
+- Maintains a task-to-Worker assignment map and each task's completion status.
 
 ---
 
@@ -115,7 +123,7 @@ MASTER                                              WORKER
 |       |<--dedicated port :7947----|              |----port :7947--------->|          |
 |       |                           |              |                                   |
 |  +---------------------------+    |              |  +----------------------------+   |
-|  | Task Dispatcher           |    |              |  | Governor                   |   |
+|  | Task Dispatcher           |    |              |  | WorkerGovernor              |   |
 |  |                           |    |              |  |                            |   |
 |  | 1. Build task chunk       |    |              |  | On negotiation request:    |   |
 |  | 2. Send negotiation req   |----|--TCP :7947-->|->| - Check RAM headroom       |   |
@@ -130,8 +138,7 @@ MASTER                                              WORKER
 |  |                           |    |              |  |   K_master sent to Master  |   |
 |  |<--K_master (task_id,      |<---|----K_master--|--|   (task_id, status,       |   |
 |  |   status, token_id,       |    |              |  |    token_id, token_value, |   |
-|  |   token_value,            |    |              |  |    max_duration_seconds,  |   |
-|  |   max_duration_seconds,   |    |              |  |    expires_at)            |   |
+|  |   max_duration_seconds,   |    |              |  |    max_duration_seconds,  |   |
 |  |   expires_at)             |    |              |  +----------------------------+   |
 |  |                           |    |              |                                   |
 |  | 3. Write task to journal  |    |              |  +----------------------------+   |
@@ -163,10 +170,10 @@ MASTER                                              WORKER
 
 1. Worker advertises over BLE. Master scans, extracts the Worker's LAN IP and handshake port automatically. No manual IP entry.
 2. Master connects to Worker on the fixed handshake port `:7946`. Authenticates using a HMAC of its ID signed with the shared passphrase. Worker verifies and allocates a dedicated port (e.g. `:7947`) for all future communication with this Master.
-3. Master builds a task chunk and sends a negotiation request to the Governor on `:7947`, describing the RAM need, CPU need, required tool, and `max_duration_seconds`.
-4. Governor checks RAM headroom, CPU headroom, and tool availability. If all pass, it generates a token pair. `K_worker` is stored internally with the reserved resource allocation. `K_master` (containing `task_id`, `status`, `token_id`, `token_value`, `max_duration_seconds`, and `expires_at`) is sent back to the Master.
+3. Master builds a task chunk and sends a negotiation request to the WorkerGovernor on `:7947`, describing the RAM need, CPU need, required tool, and `max_duration_seconds`.
+4. WorkerGovernor checks RAM headroom, CPU headroom, and tool availability. If all pass, it generates a token pair. `K_worker` is stored internally with the reserved resource allocation. `K_master` (containing `task_id`, `status`, `token_id`, `token_value`, `max_duration_seconds`, and `expires_at`) is sent back to the Master.
 5. Master writes the task to the journal with status `dispatched`, attaches `K_master` to the task envelope, and sends the task to the Worker on `:7947`.
-6. Worker validates `K_master` against `K_worker` via HMAC check and expiry check. On success, it allocates the reserved resources and executes the task. If the task is still running when `expires_at` is reached, the Governor kills it and notifies the Master.
+6. Worker validates `K_master` against `K_worker` via HMAC check and expiry check. On success, it allocates the reserved resources and executes the task. If the task is still running when `expires_at` is reached, WorkerGovernor kills it and notifies the Master.
 7. On completion, the token expires, resources are freed, and the result (output files + stdout/stderr) is sent back to the Master.
 8. Master updates the journal to `completed`.
 
@@ -286,7 +293,7 @@ Every communication channel begins on the Worker's fixed **handshake port `:7946
    its nonce store to reject replays. If any check fails, connection is
    rejected immediately.
 
-4. Worker's Governor allocates a dedicated port for this Master
+4. Worker's WorkerGovernor allocates a dedicated port for this Master
    (from a pool, e.g., 7947 to 8946).
 
 5. Worker responds:
@@ -322,31 +329,62 @@ Ramforze is running.
 
 ### 6.4 The Governor
 
-The Governor is a goroutine inside the Worker's Go backend. It is the **single authority** over all resource decisions on the Worker. No task is executed without the Governor's approval.
+The Governor is split into two roles: **MasterGovernor**, running inside the Master's Go backend, and **WorkerGovernor**, running inside the Worker's Go backend. They are separate types, not one type with a role flag, since their responsibilities and state don't overlap. WorkerGovernor is the single authority over the Worker's own resources; MasterGovernor tracks Worker and task state on the Master side and makes no resource decisions itself.
 
 All memory values in this document use binary units: `1 GiB = 1024 MiB`.
 
-**What the Governor checks before issuing a token:**
+---
 
-1. **RAM headroom:** not just current free RAM, but safe-to-offer RAM. The Governor models current usage and reserves a buffer for the Worker's own OS and applications, then calculates what can safely be offered.
+#### 6.4.1 MasterGovernor
+
+MasterGovernor tracks the state of every connected Worker and every in-flight task, driven entirely by what WorkerGovernor pushes to it. It does not poll Workers for this information.
+
+**Per-Worker state:**
+- Online/offline status, derived from the Worker's heartbeat (below), not just the TCP-level keepalive in 6.2. A missed heartbeat is a stronger signal of Worker-process health than a live TCP connection alone.
+- The Worker's cached tool-availability snapshot (e.g. `clang` present, `g++` present), as last reported in a heartbeat.
+
+**Offline detection:** if 3 consecutive heartbeats are missed (mirroring the existing keepalive logic in 6.2, ~5s probe interval), MasterGovernor marks the Worker offline and fails any task still dispatched to it.
+
+**Per-task state — task assignment table:**
+
+| task_id | worker_id | status |
+|---|---|---|
+| task-001 | worker-uuid-A | dispatched |
+| task-002 | worker-uuid-B | running |
+
+MasterGovernor writes an entry when a task is dispatched to a Worker, and updates `status` when a `TaskResult` (6.9) is pushed back or when the assigned Worker is marked offline (in which case `status` becomes `failed`, matching a Worker-disconnect fault, see 8).
+
+---
+
+#### 6.4.2 WorkerGovernor
+
+WorkerGovernor is the single authority over the Worker's resources. No task is executed without its approval.
+
+**What it checks before issuing a token:**
+
+1. **RAM headroom:** not just current free RAM, but safe-to-offer RAM. It models current usage and reserves a buffer for the Worker's own OS and applications, then calculates what can safely be offered.
    ```
    safe_to_offer_RAM = total_RAM - used_RAM - system_buffer (e.g., 1536 MiB)
    ```
 
-2. **CPU headroom:** the Governor measures current CPU utilization and calculates the available percentage.
+2. **CPU headroom:** it measures current CPU utilization and calculates the available percentage.
    ```
    safe_to_offer_CPU = 100% - current_utilization% - system_buffer (e.g., 15%)
    ```
 
-3. **Tool availability:** the Governor checks whether the binary required by the task is installed on the Worker.
+3. **Tool availability:** it checks whether the binary required by the task is installed on the Worker.
    ```
    task.required_tool = "clang"
-   Governor checks: exec.LookPath("clang") -> found / not found
+   WorkerGovernor checks: exec.LookPath("clang") -> found / not found
    ```
 
-4. **Time window:** the Master provides `max_duration_seconds` as its estimate for how long the task will take. The Governor accepts this as the token's validity window. `expires_at` is computed as `negotiation_time + max_duration_seconds`. If the task is still running when `expires_at` is reached, the Governor kills it and notifies the Master.
+4. **Time window:** the Master provides `max_duration_seconds` as its estimate for how long the task will take. WorkerGovernor accepts this as the token's validity window. `expires_at` is computed as `negotiation_time + max_duration_seconds`. If the task is still running when `expires_at` is reached, it kills the task and notifies the Master.
 
-If all four checks pass, the Governor issues a capability token, marks those resources as reserved, and subtracts the reserved amount from the available pool for any subsequent requests until the token expires or the task completes.
+If all four checks pass, WorkerGovernor issues a capability token, marks those resources as reserved, and subtracts the reserved amount from the available pool for any subsequent requests until the token expires or the task completes.
+
+**Heartbeat push:** in addition to reactive negotiation handling, WorkerGovernor runs a background loop that pushes a heartbeat to the Master every 10 seconds, over the same dedicated port established at handshake (6.3). The push itself is the liveness signal; each heartbeat also carries the Worker's tool-availability snapshot.
+
+**Tool-availability snapshot:** checked once via `exec.LookPath`, at Worker startup, then cached. The cached value is re-sent unchanged on every heartbeat, no filesystem watching or re-check per heartbeat. If a toolchain is installed or removed mid-session, the change isn't picked up until the Worker process restarts. Acceptable for MVP.
 
 ---
 
@@ -356,7 +394,7 @@ The capability token system is the security and isolation backbone of Ramforze. 
 
 **Token Generation:**
 
-The Governor generates a token pair when it approves a resource negotiation request.
+WorkerGovernor generates a token pair when it approves a resource negotiation request.
 
 ```
 token_id    = UUID v4 (random, unique per task)
@@ -368,7 +406,7 @@ token_value = HMAC-SHA256(
 Note: string fields must not contain "|". Output is hex-encoded SHA-256 (64 chars / 32 bytes).
 ```
 
-**K_worker** is stored internally by the Governor:
+**K_worker** is stored internally by WorkerGovernor:
 ```json
 {
   "token_id": "a3f9...",
@@ -382,7 +420,7 @@ Note: string fields must not contain "|". Output is hex-encoded SHA-256 (64 char
 }
 ```
 
-`max_duration_seconds` is the Master's estimate, accepted verbatim by the Governor. `expires_at` is computed as `negotiation_timestamp + max_duration_seconds`. Both fields are stored so the Governor can enforce the execution ceiling and display remaining time in the Worker UI.
+`max_duration_seconds` is the Master's estimate, accepted verbatim by WorkerGovernor. `expires_at` is computed as `negotiation_timestamp + max_duration_seconds`. Both fields are stored so WorkerGovernor can enforce the execution ceiling and display remaining time in the Worker UI.
 
 **K_master** is sent to the Master:
 ```json
@@ -405,7 +443,7 @@ Master -> sends task envelope to Worker's dedicated port
           K_master fields (token_id, token_value) included in envelope
 
 Worker -> extracts token_id from envelope
-       -> looks up K_worker from Governor's store
+       -> looks up K_worker from WorkerGovernor's store
        -> recomputes HMAC and compares with token_value
        -> checks expires_at (is it still valid?)
        -> if valid: allocates reserved resources, begins execution
@@ -415,13 +453,13 @@ Worker -> extracts token_id from envelope
 **Token Expiry Conditions:**
 
 - Task completes successfully: token marked `expired`, resources freed.
-- Task exceeds `max_duration_seconds`: Governor kills the task process, marks token `expired`, notifies Master to re-queue locally.
-- Master disconnects mid-task: TCP keepalive detects drop, Governor aborts task, token marked `expired`, resources freed.
+- Task exceeds `max_duration_seconds`: WorkerGovernor kills the task process, marks token `expired`, notifies Master to re-queue locally.
+- Master disconnects mid-task: TCP keepalive detects drop, WorkerGovernor aborts task, token marked `expired`, resources freed.
 - Worker process exits: all tokens invalidated on restart.
 
 **One token per task. One task per token. No exceptions.**
 
-For every new task, the Master must initiate a fresh negotiation with the Governor. A previous token cannot be reused even if it has not yet expired.
+For every new task, the Master must initiate a fresh negotiation with WorkerGovernor. A previous token cannot be reused even if it has not yet expired.
 
 ---
 
@@ -465,7 +503,7 @@ A task is the fundamental unit of work in Ramforze. Every task is serialized to 
 |---|---|
 | `task_id` | UUID v4. Globally unique. Written to journal before dispatch. |
 | `master_id` | Identifies which Master owns this task. |
-| `token_id` / `token_value` | Capability token issued by the Governor. Worker validates both before execution. |
+| `token_id` / `token_value` | Capability token issued by WorkerGovernor. Worker validates both before execution. |
 | `type` | Task category: `compilation`, `script`, `command`. |
 | `mode` | Which execution mode triggered this task: `transparent`, `assisted`, `manual`. |
 | `payload.tool` | The binary to run on the Worker (e.g. `clang`). |
@@ -544,7 +582,7 @@ to run it alongside all currently running tasks?
           by priority        rejection to Master
 ```
 
-When a running task completes and resources are freed, the Governor re-evaluates the queue. It picks the highest priority task that fits in the newly available headroom, validates its token (still within expiry), and dispatches it. Tasks of equal priority are ordered by arrival time (FIFO).
+When a running task completes and resources are freed, WorkerGovernor re-evaluates the queue. It picks the highest priority task that fits in the newly available headroom, validates its token (still within expiry), and dispatches it. Tasks of equal priority are ordered by arrival time (FIFO).
 
 **Rejection response to Master:**
 ```json
@@ -574,7 +612,7 @@ When the Worker completes a task:
 
 ## 7. The Three Execution Modes
 
-All three modes share the same underlying pipeline: negotiate with Governor, receive token, attach token to task, execute on Worker, return result. They differ only in **how a task enters the system**.
+All three modes share the same underlying pipeline: negotiate with WorkerGovernor, receive token, attach token to task, execute on Worker, return result. They differ only in **how a task enters the system**.
 
 A pre-established connection is required for all three modes. If no Worker is connected, every mode falls back to local execution silently.
 
@@ -593,13 +631,13 @@ Normal flow:
 Ramforze flow:
   go build -> /usr/local/bin/ramforze-clang (wrapper)
     |
-    -> If Worker is connected and Governor approved:
+    -> If Worker is connected and WorkerGovernor approved:
          Master transfers source file to Worker
          Worker compiles
          Worker returns .o file
          go build continues, never knew anything changed
     |
-    -> If not connected, or Governor rejected, or Worker timed out:
+    -> If not connected, or WorkerGovernor rejected, or Worker timed out:
          Falls through to /usr/bin/clang
          Compiles locally
          User sees no Ramforze-specific error (silent fallback)
@@ -650,7 +688,7 @@ Master UI -> "Manual" tab
 
 Ramforze:
   -> creates task from user input
-  -> negotiates with Governor
+  -> negotiates with WorkerGovernor
   -> dispatches on approval
   -> streams stdout and stderr back to Master UI in real time
 ```
@@ -671,17 +709,17 @@ Ramforze:
 ### Master crashes mid-task
 
 1. Worker detects TCP connection drop via keepalive.
-2. Worker's Governor aborts the running task process.
-3. Governor expires the capability token and frees reserved resources.
+2. Worker's WorkerGovernor aborts the running task process.
+3. WorkerGovernor expires the capability token and frees reserved resources.
 4. Worker returns to idle. No resource leak.
 5. On Master restart: journal recovery flow runs (see Section 6.7).
 
 ### Task exceeds max_duration_seconds
 
-1. Governor's background watcher checks token expiry every 5 seconds.
+1. WorkerGovernor's background watcher checks token expiry every 5 seconds.
 2. If a task is still running when `expires_at` is reached:
-   - Governor sends SIGKILL to the task process.
-   - Governor sends a `TASK_TIMEOUT` message to the Master.
+   - WorkerGovernor sends SIGKILL to the task process.
+   - WorkerGovernor sends a `TASK_TIMEOUT` message to the Master.
    - Master marks the task `timed_out` in the journal and re-queues it locally.
 
 ### Worker rejects task (insufficient resources)
@@ -693,8 +731,8 @@ Ramforze:
 
 ### Required tool not available on Worker
 
-1. Governor's tool check fails during negotiation.
-2. Governor sends: `{ "task_id": "uuid", "status": "rejected", "reason": "tool_not_available", "tool": "clang" }`.
+1. WorkerGovernor's tool check fails during negotiation.
+2. WorkerGovernor sends: `{ "task_id": "uuid", "status": "rejected", "reason": "tool_not_available", "tool": "clang" }`.
 3. Master re-queues locally and surfaces a warning in the UI.
 4. This task type is not attempted on this Worker again for the session.
 
@@ -713,11 +751,11 @@ The passphrase is set by the user in the Ramforze UI on both machines before the
 
 ### Capability Token Forgery Prevention
 
-Tokens are HMAC-SHA256 signed using the shared passphrase. A Master cannot fabricate a valid token. It must go through the Governor's negotiation flow for every single task. The Worker verifies the HMAC signature on every task envelope before execution begins.
+Tokens are HMAC-SHA256 signed using the shared passphrase. A Master cannot fabricate a valid token. It must go through WorkerGovernor's negotiation flow for every single task. The Worker verifies the HMAC signature on every task envelope before execution begins.
 
 ### Resource Isolation
 
-Each task runs with the CPU and RAM ceiling that the Governor approved. The Governor reserves these resources at negotiation time and does not issue overlapping tokens that would exceed safe headroom. The Worker's own OS and applications are protected by the system buffer baked into the Governor's headroom calculation.
+Each task runs with the CPU and RAM ceiling that WorkerGovernor approved. WorkerGovernor reserves these resources at negotiation time and does not issue overlapping tokens that would exceed safe headroom. The Worker's own OS and applications are protected by the system buffer baked into WorkerGovernor's headroom calculation.
 
 ### No Internet Communication
 
@@ -769,7 +807,7 @@ SwiftUI sends commands and receives state updates over the Unix socket. The Go b
 
 ### Worker UI: Key Screens
 
-**Governor Status:**
+**WorkerGovernor Status:**
 ```
 +------------------------------------------------+
 |  Ramforze  (Worker Mode)                Live   |
@@ -848,7 +886,7 @@ ramforze/
 }
 ```
 
-### Negotiation REQUEST (Master to Governor on dedicated port)
+### Negotiation REQUEST (Master to WorkerGovernor on dedicated port)
 ```json
 {
   "task_id": "uuid",
@@ -864,7 +902,7 @@ ramforze/
 }
 ```
 
-### Negotiation RESPONSE: Approved (Governor to Master)
+### Negotiation RESPONSE: Approved (WorkerGovernor to Master)
 ```json
 {
   "task_id": "uuid",
@@ -876,7 +914,7 @@ ramforze/
 }
 ```
 
-### Negotiation RESPONSE: Rejected (Governor to Master)
+### Negotiation RESPONSE: Rejected (WorkerGovernor to Master)
 ```json
 {
   "task_id": "uuid",
@@ -934,7 +972,7 @@ ramforze/
 }
 ```
 
-### Task Timeout Notification (Governor to Master)
+### Task Timeout Notification (WorkerGovernor to Master)
 ```json
 {
   "task_id": "uuid",
@@ -945,6 +983,16 @@ ramforze/
 ```
 
 This is a separate wire message from `TaskResult`, not a result variant.
+
+### Worker Heartbeat (Worker to Master, every 10s, on dedicated port)
+```json
+{
+  "worker_id": "uuid",
+  "timestamp": "2026-08-30T10:30:00Z",
+  "tools_available": ["clang", "g++"]
+}
+```
+Consumed by MasterGovernor to derive Worker online/offline status and to refresh the cached tool-availability snapshot per Worker (6.4.1). Not a result and not tied to any specific `task_id`.
 
 ---
 
