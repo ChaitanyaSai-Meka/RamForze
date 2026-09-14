@@ -11,8 +11,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/chaitanyasai-meka/Ramforze/internal/ble"
-	"github.com/chaitanyasai-meka/Ramforze/internal/handshake"
+	"github.com/chaitanyasai-meka/Ramforze/internal/master/ble"
+	"github.com/chaitanyasai-meka/Ramforze/internal/master/handshake"
 	"github.com/chaitanyasai-meka/Ramforze/internal/token"
 )
 
@@ -123,7 +123,7 @@ func main() {
 			if event.Action == "add" {
 				go func(e ble.BLEEvent) {
 					fmt.Printf("Initiating handshake with %s (%s)\n", e.Name, e.IP)
-					port, err := handshake.RequestDedicatedPort(e.IP, masterID, masterIP)
+					port, err := masterhandshake.RequestDedicatedPort(e.IP, masterID, masterIP)
 					if err != nil {
 						fmt.Println("Handshake failed:", err)
 						return

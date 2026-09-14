@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/chaitanyasai-meka/Ramforze/internal/handshake"
+	"github.com/chaitanyasai-meka/Ramforze/internal/worker/handshake"
 	"github.com/chaitanyasai-meka/Ramforze/internal/token"
 )
 
@@ -50,7 +50,7 @@ func main() {
 		return
 	}
 
-	server, err := handshake.NewServer(workerID)
+	server, err := workerhandshake.NewServer(workerID)
 	if err != nil {
 		fmt.Println("Failed to init handshake server:", err)
 		return

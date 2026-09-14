@@ -1,4 +1,4 @@
-package handshake
+package workerhandshake
 
 import (
 	"encoding/json"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/chaitanyasai-meka/Ramforze/internal/token"
 	"github.com/chaitanyasai-meka/Ramforze/pkg/types"
+	"github.com/chaitanyasai-meka/Ramforze/internal/handshake"
 )
 
 type Server struct {
@@ -20,7 +21,7 @@ type Server struct {
 }
 
 func NewServer(workerID string) (*Server, error) {
-	pass, err := ReadPassphrase()
+	pass, err := handshake.ReadPassphrase()
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +59,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	if !RegisterAndCheckRateLimit(s.ratelimiter, conn.RemoteAddr().String()){
-		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedRateLimit})
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: handshake.HandshakeStatusRejectedRateLimit})
 		return
 	}
 
@@ -69,11 +70,11 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 
 	if hello.ProtocolVersion != "1.0" {
-		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedUnsupported})
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: handshake.HandshakeStatusRejectedUnsupported})
 		return
 	}
 	if strings.TrimSpace(hello.MasterID) == "" {
-		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedInvalidFields})
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: handshake.HandshakeStatusRejectedInvalidFields})
 		return
 	}
 
@@ -83,7 +84,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 
 	if Checknonce(s.nonceStore,key) {
-		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedNonceUsed})
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: handshake.HandshakeStatusRejectedNonceUsed})
 		return
 	}
 	
@@ -91,20 +92,20 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	isValid := token.VerifyHandshake(hello.MasterID, s.passphrase, hello.AuthHMAC, hello.Timestamp)
 	if !isValid {
-		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedUnauthorized})
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: handshake.HandshakeStatusRejectedUnauthorized})
 		return
 	}
 
 	port, err := s.pool.Allocate()
 	if err != nil {
-		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: HandshakeStatusRejectedNoPortsAvailable})
+		json.NewEncoder(conn).Encode(types.HandshakeResponse{Status: handshake.HandshakeStatusRejectedNoPortsAvailable})
 		return
 	}
 
 	response := types.HandshakeResponse{
 		WorkerID:      s.workerID,
 		DedicatedPort: port,
-		Status:        HandshakeStatusConnected,
+		Status:        handshake.HandshakeStatusConnected,
 	}
 
 	if err := json.NewEncoder(conn).Encode(response); err != nil {

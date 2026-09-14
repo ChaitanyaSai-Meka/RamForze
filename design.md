@@ -230,11 +230,11 @@ macOS BLE Architecture:
 |   Swift Process           |        |   Go Backend              |
 |   (BLEBridge)             |        |                           |
 |                           |        |                           |
-|   CoreBluetooth           |        |   internal/ble            |
+|   CoreBluetooth           |        |   internal/master/ble     |
 |   - CBCentralManager      |        |   - Reads peer discovery  |
 |     (Master: scanning)    | Unix   |     events from socket    |
 |   - Connect + discover    | socket |   - Extracts IP + port    |
-|   - Read GATT payload     |------->|   - Triggers TCP handshake |
+|   - Read GATT payload     |------->|   - Triggers TCP handshake|
 |   - Disconnect            |        |                           |
 |   - CBPeripheralManager   |        |                           |
 |     (Worker: advertising) |        |                           |
@@ -830,37 +830,43 @@ SwiftUI sends commands and receives state updates over the Unix socket. The Go b
 
 ## 11. Project Structure
 
+Split into shared, master-only, and worker-only packages. `internal/handshake` and `internal/token` hold only logic genuinely used by both roles (config/passphrase reading, status codes, HMAC token sign/verify) so they aren't duplicated; everything role-specific lives under `internal/master/` or `internal/worker/`.
+
 ```
 ramforze/
 ├── cmd/
-│   ├── master/           # Master entrypoint
-│   └── worker/           # Worker entrypoint
+│   ├── master/                    # Master entrypoint
+│   └── worker/                    # Worker entrypoint
 ├── internal/
-│   ├── ble/              # BLE advertising and scanning
-│   ├── transport/        # TCP connection management, keepalive
-│   ├── handshake/        # Port allocation, connection registry, auth
-│   ├── governor/         # Resource negotiation, token issuance, expiry watcher
-│   ├── token/            # UUID + HMAC token generation and verification
-│   ├── journal/          # Task journal read/write (ndjson)
-│   ├── queue/            # Worker priority queue
-│   ├── dispatcher/       # Task chunking and dispatch logic
-│   ├── modes/
-│   │   ├── transparent/  # Compiler wrapper integration
-│   │   ├── assisted/     # Resource monitor and notification trigger
-│   │   └── manual/       # Remote execution launcher
-│   ├── result/           # Result receipt and file transfer
-│   └── socket/           # Unix socket bridge to SwiftUI
+│   ├── handshake/                 # SHARED: config.go (passphrase), status.go (status codes)
+│   ├── token/                     # SHARED: HMAC token generation and verification
+│   ├── master/
+│   │   ├── ble/                   # BLE scanning (package ble, unchanged)
+│   │   ├── handshake/             # RequestDedicatedPort etc. (package masterhandshake, renamed to avoid collision)
+│   │   ├── journal/               # Master task journal, read/write ndjson (package journal, unchanged)
+│   │   ├── governor/              # MasterGovernor: worker status, task assignment table
+│   │   ├── dispatcher/            # Task chunking and dispatch logic
+│   │   └── modes/
+│   │       ├── transparent/       # Compiler wrapper integration
+│   │       ├── assisted/          # Resource monitor and notification trigger
+│   │       └── manual/            # Remote execution launcher
+│   └── worker/
+│       ├── handshake/             # Server, PortPool, Registry, NonceMutex, RateLimitMux (package workerhandshake)
+│       ├── governor/              # WorkerGovernor: resource negotiation, heartbeat push
+│       └── queue/                 # Worker priority queue
 ├── pkg/
-│   └── types/            # Shared types: Task, Token, JournalEntry, etc.
-├── swift/                # SwiftUI frontend (Xcode project)
+│   └── types/                     # SHARED: Task, Token, JournalEntry, wire message types, etc.
+├── swift/                         # SwiftUI frontend (Xcode project)
 │   ├── Views/
 │   ├── Models/
-│   ├── Bridge/           # Unix socket client in Swift
-│   └── BLEBridge/        # CoreBluetooth advertiser and scanner
+│   ├── Bridge/                    # Unix socket client in Swift
+│   └── BLEBridge/                 # CoreBluetooth advertiser and scanner
 ├── scripts/
-│   └── install-wrappers.sh   # Installs ramforze-clang etc. into PATH
+│   └── install-wrappers.sh        # Installs ramforze-clang etc. into PATH
 └── design.md
 ```
+
+Note: `internal/result` and `internal/socket` (result receipt/file transfer, Unix socket bridge to SwiftUI) are still to be built on both Master and Worker sides; their exact shared-vs-split shape will be decided when that work starts, following the same rule used above.
 
 ---
 
