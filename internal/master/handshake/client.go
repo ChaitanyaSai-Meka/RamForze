@@ -1,4 +1,4 @@
-package handshake
+package masterhandshake
 
 import (
 	"encoding/json"
@@ -7,10 +7,11 @@ import (
 
 	"github.com/chaitanyasai-meka/Ramforze/internal/token"
 	"github.com/chaitanyasai-meka/Ramforze/pkg/types"
+	"github.com/chaitanyasai-meka/Ramforze/internal/handshake"
 )
 
 func RequestDedicatedPort(workerIP string, masterID string, masterIP string) (int, error) {
-	passphrase, err := ReadPassphrase()
+	passphrase, err := handshake.ReadPassphrase()
 	if err != nil {
 		return 0, fmt.Errorf("client failed to read config: %w", err)
 	}
@@ -44,7 +45,7 @@ func RequestDedicatedPort(workerIP string, masterID string, masterIP string) (in
 		return 0, fmt.Errorf("failed to read handshake response: %w", err)
 	}
 
-	if response.Status != HandshakeStatusConnected {
+	if response.Status != handshake.HandshakeStatusConnected {
 		return 0, fmt.Errorf("handshake rejected by worker: %s", response.Status)
 	}
 

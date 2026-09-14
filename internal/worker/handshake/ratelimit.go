@@ -1,4 +1,4 @@
-package handshake
+package workerhandshake
 
 import (
 	"sync"
