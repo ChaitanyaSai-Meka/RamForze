@@ -364,12 +364,13 @@ WorkerGovernor is the single authority over the Worker's resources. No task is e
 
 1. **RAM headroom:** not just current free RAM, but safe-to-offer RAM. It models current usage and reserves a buffer for the Worker's own OS and applications, then calculates what can safely be offered.
    ```
-   safe_to_offer_RAM = total_RAM - used_RAM - system_buffer (e.g., 1536 MiB)
+    RAMHeadroomMiB = available_RAM - system_buffer (e.g., 1536 MiB)
    ```
+  `available_RAM` already accounts for reclaimable cache and buffers, so this is a more accurate estimate of what could actually be freed than `total_RAM - used_RAM`, which treats reclaimable memory as unavailable.
 
 2. **CPU headroom:** it measures current CPU utilization and calculates the available percentage.
    ```
-   safe_to_offer_CPU = 100% - current_utilization% - system_buffer (e.g., 15%)
+    CPUHeadroomPercent = 100% - current_utilization% - system_buffer (e.g., 15%)
    ```
 
 3. **Tool availability:** it checks whether the binary required by the task is installed on the Worker.
@@ -377,6 +378,8 @@ WorkerGovernor is the single authority over the Worker's resources. No task is e
    task.required_tool = "clang"
    WorkerGovernor checks: exec.LookPath("clang") -> found / not found
    ```
+
+RAM and CPU headroom can be negative by design when the Worker is over-committed. The dispatcher interprets those values; this function only reports the calculated headroom.
 
 4. **Time window:** the Master provides `max_duration_seconds` as its estimate for how long the task will take. WorkerGovernor accepts this as the token's validity window. `expires_at` is computed as `negotiation_time + max_duration_seconds`. If the task is still running when `expires_at` is reached, it kills the task and notifies the Master.
 
